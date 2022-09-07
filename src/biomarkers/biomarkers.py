@@ -26,6 +26,7 @@ class MainWF(nipype.Workflow):
         output_dir: Path,
         anat: bool = True,
         rest: bool = True,
+        cat_dir: Path | None = None,
         **kwargs,
     ) -> MainWF:
         wf = cls(**kwargs)
@@ -41,7 +42,7 @@ class MainWF(nipype.Workflow):
         )
         if anat:
             t1w = layout.get(return_type="file", suffix="T1w", extension="nii.gz")
-            wf._connect_anat(t1w, datasink=datasink)
+            wf._connect_anat(t1w=t1w, cat_dir=cat_dir, datasink=datasink)
         if rest:
             t1w = layout.get(return_type="file", suffix="T1w", extension="nii.gz")
             bold = layout.get(
@@ -50,11 +51,20 @@ class MainWF(nipype.Workflow):
             wf._connect_rest(bold, anat=t1w[0], datasink=datasink)
         return wf
 
-    def _connect_anat(self, anat: list[Path], datasink: nipype.Node) -> MainWF:
+    def _connect_anat(
+        self,
+        anat: list[Path],
+        datasink: nipype.Node,
+        cat_dir: Path | None,
+    ) -> MainWF:
         inputnode = io.InputNode.from_fields(
             ["in_file"], iterables=[("in_file", anat)], name="input_anat"
         )
-        wf = AnatWF()
+        if cat_dir:
+            wf = AnatWF.from_cat(cat_dir)
+        else:
+            wf = AnatWF()
+
         self.connect(
             [
                 (inputnode, wf, [("in_file", "inputnode.in_file")]),
@@ -114,6 +124,10 @@ class MainWF(nipype.Workflow):
     default="work",
     type=click.Path(file_okay=False, dir_okay=True, resolve_path=True, path_type=Path),
 )
+@click.option(
+    "--cat-dir",
+    type=click.Path(file_okay=False, dir_okay=True, resolve_path=True, path_type=Path),
+)
 @click.option("--anat", default=False, is_flag=True)
 @click.option("--rest", default=False, is_flag=True)
 @click.option(
@@ -125,6 +139,7 @@ def main(
     src: Path,
     output_dir: Path = Path("out"),
     base_dir: Path = Path("work"),
+    cat_dir: Path | None = None,
     anat: bool = False,
     rest: bool = False,
     plugin: str = "Linear",
@@ -133,7 +148,12 @@ def main(
     layout = bids.BIDSLayout(root=src)
 
     wf = MainWF.from_layout(
-        output_dir=output_dir, base_dir=base_dir, layout=layout, anat=anat, rest=rest
+        output_dir=output_dir,
+        base_dir=base_dir,
+        layout=layout,
+        anat=anat,
+        rest=rest,
+        cat_dir=cat_dir,
     )
 
     wf.run(plugin)
