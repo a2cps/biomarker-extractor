@@ -13,6 +13,8 @@ from .workflows.rest import RestWF
 # TODO: add ability to injest fMRIPrep output
 # be caareful about MNI spaces. for potential transformations, see
 # https://neurostars.org/t/atlas-for-mni-2009c-asym-template-coordinate-transform-to-mni-6th-gen/1116
+# TODO
+# - decide on which workflows will be rerunable (maybe only those without dedicated containers, or which can be called from python)
 
 
 class MainWF(nipype.Workflow):
@@ -114,6 +116,10 @@ class MainWF(nipype.Workflow):
     default="work",
     type=click.Path(file_okay=False, dir_okay=True, resolve_path=True, path_type=Path),
 )
+@click.option(
+    "--layout-dir",
+    type=click.Path(file_okay=False, dir_okay=True, resolve_path=True, path_type=Path),
+)
 @click.option("--anat", default=False, is_flag=True)
 @click.option("--rest", default=False, is_flag=True)
 @click.option(
@@ -128,9 +134,13 @@ def main(
     anat: bool = False,
     rest: bool = False,
     plugin: str = "Linear",
+    layout_dir: Path | None = None,
 ) -> None:
 
-    layout = bids.BIDSLayout(root=src)
+    if layout_dir:
+        layout = bids.layout.BIDSLayout(database_path=layout_dir)
+    else:
+        layout = bids.BIDSLayout(root=src)
 
     wf = MainWF.from_layout(
         output_dir=output_dir, base_dir=base_dir, layout=layout, anat=anat, rest=rest
