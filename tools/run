@@ -1,0 +1,22 @@
+#!/bin/bash
+#SBATCH -J fslanat
+#SBATCH -o out
+#SBATCH -e err
+#SBATCH -t 12:00:00
+#SBATCH -p corralextra
+#SBATCH -N 1 -n 1
+#SBATCH -A A2CPS
+
+source "$HOME"/.bashrc
+
+mamba activate biomarkers
+
+export FSLOUTPUTTYPE=NIFTI_GZ
+export FSLDIR=/home1/08266/psadil/mambaforge/envs/biomarkers
+
+mark --anat \
+    --output-dir ./biomarkers \
+    --layout-dir /corral-secure/projects/A2CPS/shared/psadil/products/mris/all_sites/bids/bids_db \
+    --base-dir ./scratch \
+    --plugin MultiProc \
+    /corral-secure/projects/A2CPS/products/mris/all_sites/bids
