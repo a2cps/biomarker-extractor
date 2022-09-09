@@ -121,6 +121,10 @@ class MainWF(nipype.Workflow):
     type=click.Path(file_okay=False, dir_okay=True, resolve_path=True, path_type=Path),
 )
 @click.option(
+    "--layout-dir",
+    type=click.Path(file_okay=False, dir_okay=True, resolve_path=True, path_type=Path),
+)
+@click.option(
     "--cat-dir",
     type=click.Path(file_okay=False, dir_okay=True, resolve_path=True, path_type=Path),
 )
@@ -139,9 +143,13 @@ def main(
     anat: bool = False,
     rest: bool = False,
     plugin: str = "Linear",
+    layout_dir: Path | None = None,
 ) -> None:
 
-    layout = bids.BIDSLayout(root=src)
+    if layout_dir:
+        layout = bids.layout.BIDSLayout(database_path=layout_dir)
+    else:
+        layout = bids.BIDSLayout(root=src)
 
     wf = MainWF.from_layout(
         output_dir=output_dir,
