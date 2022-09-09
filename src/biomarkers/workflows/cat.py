@@ -5,8 +5,6 @@ import nipype
 from ..nodes import io
 from ..interfaces import catutils
 
-# from niworkflows.interfaces import bids
-
 
 class CATWF(nipype.Workflow):
     """pull derivatives from CAT12 output
@@ -20,13 +18,14 @@ class CATWF(nipype.Workflow):
     def __init__(self) -> CATWF:
         super().__init__(name="cat_wf")
         inputnode = io.InputNode.from_fields(["cat_dir"])
-        outputnode = io.OutputNode.from_fields(["anat", "volumes"])
-        catxml = nipype.Node(catutils.CATXML(), name="catxml")
+        outputnode = io.OutputNode.from_fields(["volumes"])
+
+        volumes = nipype.Node(catutils.CATVol(), name="volumes")
+        volumes.inputs.glob = "mwp1sub*nii"
+
         self.connect(
             [
-                (inputnode, first, [("in_file", "in_file")]),
-                (first, volumes, [("anat", "src")]),
+                (inputnode, volumes, [("cat_dir", "cat_dir")]),
                 (volumes, outputnode, [("volumes", "volumes")]),
-                (first, outputnode, [("anat", "anat")]),
             ]
         )

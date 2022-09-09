@@ -10,10 +10,6 @@ from .nodes import io
 from .workflows.anat import AnatWF
 from .workflows.rest import RestWF
 
-# TODO: add ability to injest fMRIPrep output
-# be caareful about MNI spaces. for potential transformations, see
-# https://neurostars.org/t/atlas-for-mni-2009c-asym-template-coordinate-transform-to-mni-6th-gen/1116
-
 
 class MainWF(nipype.Workflow):
     def __init__(self, **kwargs):

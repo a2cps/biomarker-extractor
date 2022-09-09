@@ -2,40 +2,56 @@ from __future__ import annotations
 
 import pathlib
 
+import numpy as np
+import pandas as pd
+from nilearn import maskers
+
 from nipype.interfaces.base import (
     TraitedSpec,
-    ImageFile,
     Directory,
     SimpleInterface,
+    Str,
+    File,
 )
 
 
-class CATXMLInputSpec(TraitedSpec):
-    feat_dir = Directory(
+class CATVolInputSpec(TraitedSpec):
+    cat_dir = Directory(
         exists=True,
         manditory=True,
         resolve=True,
-        desc="directory of FEAT analysis",
+        desc="directory containing all cat12 outputs",
     )
+    glob = Str(manditory=True, desc="glob pattern to match files in cat_dir")
 
 
-class CATXMLOutputSpec(TraitedSpec):
-    filtered_func_data = ImageFile(desc="image file from input")
-    example_func2standard_warp = ImageFile(desc="for use with applywarp")
+class CATVolOutputSpec(TraitedSpec):
+    volumes = File(desc="tsv file containing volumes")
 
 
-class CATXML(SimpleInterface):
+class CATVol(SimpleInterface):
 
-    input_spec = CATXMLInputSpec
-    output_spec = CATXMLOutputSpec
+    input_spec = CATVolInputSpec
+    output_spec = CATVolOutputSpec
+
+    def __init__(self, **inputs):
+        super().__init__(**inputs)
 
     def _run_interface(self, runtime):
-        self._results["filtered_func_data"] = (
-            pathlib.Path(self.inputs.feat_dir) / "filtered_func_data.nii.gz"
+        coords = [(2, 52, -2)]
+        radius = 10
+
+        masker = maskers.NiftiSpheresMasker(coords, radius=radius)
+
+        inputs = [x for x in pathlib.Path(self.inputs.cat_dir).glob(self.inputs.glob)]
+        time_series = masker.fit_transform(inputs)
+        volumes = time_series * 4.0 / 3.0 * np.pi * radius**3
+
+        d = pd.DataFrame(
+            {coords[0]: time_series[:, 0], "volume": volumes[:, 0]},
+            index=[x.name for x in inputs],
         )
-        self._results["example_func2standard_warp"] = (
-            pathlib.Path(self.inputs.feat_dir)
-            / "reg"
-            / "example_func2standard_warp.nii.gz"
-        )
+        self._results["volumes"] = "mpfc-gm.tsv"
+        d.to_csv(self._results["volumes"], sep="\t", index_label="file")
+
         return runtime
