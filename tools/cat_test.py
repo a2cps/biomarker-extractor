@@ -20,3 +20,14 @@ d = pd.DataFrame(
     index=[x.name for x in inputs],
 )
 d.to_csv("vols.tsv", sep="\t", index_label="file")
+
+
+from biomarkers.workflows import cat
+
+
+cat_wf = cat.CATWF(base_dir="cat_wf")
+cat_wf.inputs.inputnode.cat_dir = (
+    "/corral-secure/projects/A2CPS/shared/psadil/products/mris/all_sites/cat/mri"
+)
+cat_wf.run()
+cat_wf.outputs.outputnode.volumes

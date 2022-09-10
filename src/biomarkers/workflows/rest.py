@@ -9,8 +9,8 @@ from ..nodes import io
 
 
 class RestWF(nipype.Workflow):
-    def __init__(self, **kwargs) -> RestWF:
-        super().__init__(name="rest", **kwargs)
+    def __init__(self, **inputs) -> RestWF:
+        super().__init__(name="rest", **inputs)
         inputnode = io.InputNode.from_fields(["in_file", "anat"])
         outputnode = io.OutputNode.from_fields(["correlation_matrix", "feat_dir"])
 

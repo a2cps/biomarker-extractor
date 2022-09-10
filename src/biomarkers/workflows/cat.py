@@ -15,8 +15,8 @@ class CATWF(nipype.Workflow):
         nipype (_type_): _description_
     """
 
-    def __init__(self) -> CATWF:
-        super().__init__(name="cat_wf")
+    def __init__(self, **inputs) -> CATWF:
+        super().__init__(name="cat_wf", **inputs)
         inputnode = io.InputNode.from_fields(["cat_dir"])
         outputnode = io.OutputNode.from_fields(["volumes"])
 
