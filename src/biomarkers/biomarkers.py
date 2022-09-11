@@ -9,6 +9,7 @@ import bids
 from .nodes import io
 from .workflows.anat import AnatWF
 from .workflows.rest import RestWF
+from .workflows.cat import CATWF
 
 
 class MainWF(nipype.Workflow):
@@ -38,28 +39,26 @@ class MainWF(nipype.Workflow):
         )
         if anat:
             t1w = layout.get(return_type="file", suffix="T1w", extension="nii.gz")
-            wf._connect_anat(anat=t1w, cat_dir=cat_dir, datasink=datasink)
+            wf._connect_anat(anat=t1w, datasink=datasink)
         if rest:
             t1w = layout.get(return_type="file", suffix="T1w", extension="nii.gz")
             bold = layout.get(
                 return_type="file", suffix="bold", extension="nii.gz", task="rest"
             )
             wf._connect_rest(bold, anat=t1w[0], datasink=datasink)
+        if cat_dir:
+            wf._connect_cat(cat_dir)
         return wf
 
     def _connect_anat(
         self,
         anat: list[Path],
         datasink: nipype.Node,
-        cat_dir: Path | None,
     ) -> MainWF:
         inputnode = io.InputNode.from_fields(
             ["in_file"], iterables=[("in_file", anat)], name="input_anat"
         )
-        if cat_dir:
-            wf = AnatWF.from_cat(cat_dir)
-        else:
-            wf = AnatWF()
+        wf = AnatWF()
 
         self.connect(
             [
@@ -102,6 +101,30 @@ class MainWF(nipype.Workflow):
             ]
         )
         return self
+
+    def _connect_cat(self, cat_dir: Path, datasink: nipype.Node) -> MainWF:
+        inputnode = io.InputNode.from_fields(["cat_dir"], name="input_cat")
+        inputnode.inputs.cat_dir = cat_dir
+        cat_wf = CATWF()
+
+        self.connect(
+            [
+                (
+                    inputnode,
+                    cat_wf,
+                    [
+                        ("cat_dir", "inputnode.cat_dir"),
+                    ],
+                ),
+                (
+                    cat_wf,
+                    datasink,
+                    [("outputnode.volumes", "@catvolumes")],
+                ),
+            ]
+        )
+
+        pass
 
 
 @click.command(context_settings={"ignore_unknown_options": True})

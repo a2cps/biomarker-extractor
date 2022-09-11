@@ -29,31 +29,3 @@ class AnatWF(nipype.Workflow):
                 ),
             ]
         )
-
-    @classmethod
-    def from_cat(cls, cat_dir: Path) -> AnatWF:
-        wf = cls()
-        inputnode = io.InputNode.from_fields(
-            ["cat_dir"], iterables=[("cat_dir", cat_dir)], name="input_cat"
-        )
-        outputnode = io.OutputNode.from_fields(["volumes"])
-
-        cat_wf = CATWF()
-
-        wf.connect(
-            [
-                (
-                    inputnode,
-                    cat_wf,
-                    [
-                        ("cat_dir", "inputnode.cat_dir"),
-                    ],
-                ),
-                (
-                    cat_wf,
-                    outputnode,
-                    [("outputnode.volumes", "@volumes")],
-                ),
-            ]
-        )
-        return wf
