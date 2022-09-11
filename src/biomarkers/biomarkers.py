@@ -38,7 +38,7 @@ class MainWF(nipype.Workflow):
         )
         if anat:
             t1w = layout.get(return_type="file", suffix="T1w", extension="nii.gz")
-            wf._connect_anat(t1w=t1w, cat_dir=cat_dir, datasink=datasink)
+            wf._connect_anat(anat=t1w, cat_dir=cat_dir, datasink=datasink)
         if rest:
             t1w = layout.get(return_type="file", suffix="T1w", extension="nii.gz")
             bold = layout.get(
