@@ -51,7 +51,7 @@ class CATVol(SimpleInterface):
             {coords[0]: time_series[:, 0], "volume": volumes[:, 0]},
             index=[x.name for x in inputs],
         )
-        self._results["volumes"] = "mpfc-gm.tsv"
+        self._results["volumes"] = str(pathlib.Path("mpfc-gm.tsv").absolute())
         d.to_csv(self._results["volumes"], sep="\t", index_label="file")
 
         return runtime
