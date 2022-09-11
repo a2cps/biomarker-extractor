@@ -29,7 +29,7 @@ class MainWF(nipype.Workflow):
         wf = cls(**kwargs)
         datasink = nipype.Node(
             nipype.DataSink(
-                base_directory=output_dir,
+                base_directory=str(output_dir),
                 regexp_substitutions=[
                     (r"_in_file_.*/", ""),
                 ],
@@ -103,19 +103,11 @@ class MainWF(nipype.Workflow):
         return self
 
     def _connect_cat(self, cat_dir: Path, datasink: nipype.Node) -> MainWF:
-        inputnode = io.InputNode.from_fields(["cat_dir"], name="input_cat")
-        inputnode.inputs.cat_dir = cat_dir
         cat_wf = CATWF()
+        cat_wf.inputs.inputnode.cat_dir = cat_dir
 
         self.connect(
             [
-                (
-                    inputnode,
-                    cat_wf,
-                    [
-                        ("cat_dir", "inputnode.cat_dir"),
-                    ],
-                ),
                 (
                     cat_wf,
                     datasink,
