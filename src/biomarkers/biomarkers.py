@@ -47,7 +47,7 @@ class MainWF(nipype.Workflow):
             )
             wf._connect_rest(bold, anat=t1w[0], datasink=datasink)
         if cat_dir:
-            wf._connect_cat(cat_dir)
+            wf._connect_cat(cat_dir, datasink=datasink)
         return wf
 
     def _connect_anat(

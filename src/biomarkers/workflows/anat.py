@@ -1,11 +1,8 @@
 from __future__ import annotations
 
-from pathlib import Path
-
 import nipype
 
 from .first import FIRSTWF
-from .cat import CATWF
 from ..nodes import io
 
 # from niworkflows.interfaces import bids
