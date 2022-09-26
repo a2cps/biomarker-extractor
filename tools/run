@@ -1,22 +1,49 @@
 #!/bin/bash
-#SBATCH -J fslanat
+#SBATCH -J biomarkers
 #SBATCH -o out
 #SBATCH -e err
-#SBATCH -t 12:00:00
+#SBATCH -t 02:00:00
 #SBATCH -p corralextra
 #SBATCH -N 1 -n 1
 #SBATCH -A A2CPS
 
+date
+
 source "$HOME"/.bashrc
 
-mamba activate biomarkers
+mamba activate biomarkers-prefect
+
+set -x
 
 export FSLOUTPUTTYPE=NIFTI_GZ
-export FSLDIR=/home1/08266/psadil/mambaforge/envs/biomarkers
+export FSLDIR=/home1/08266/psadil/mambaforge/envs/biomarkers-prefect
 
-mark --anat \
-    --output-dir ./biomarkers \
-    --layout-dir /corral-secure/projects/A2CPS/shared/psadil/products/mris/all_sites/bids/bids_db \
-    --base-dir ./scratch \
-    --plugin MultiProc \
-    /corral-secure/projects/A2CPS/products/mris/all_sites/bids
+
+catdir=/corral-secure/projects/A2CPS/shared/psadil/products/mris/all_sites/cat
+bidsdir=/corral-secure/projects/A2CPS/products/mris/all_sites/bids
+outdir=/corral-secure/projects/A2CPS/shared/psadil/jobs/mark/biomarkers
+fmriprep_dir=/corral-secure/projects/A2CPS/shared/psadil/products/mris/all_sites/fmriprep/rest
+
+# link cat
+date
+
+for site in NS_northshore UI_uic UC_uchicago UM_umichigan WS_wayne_state SH_spectrum_health; do
+  cp -aRust ${catdir} /corral-secure/projects/A2CPS/products/mris/${site}/cat12/*/*
+done
+
+# link fmriprep
+shopt -s extglob
+
+for site in NS_northshore UI_uic UC_uchicago UM_umichigan WS_wayne_state SH_spectrum_health; do
+  cp -aRust ${fmriprep_dir} /corral-secure/projects/A2CPS/products/mris/${site}/fmriprep/*/rest/fmriprep/!(*html|json|.bidsignore|*tsv|*json|logs)
+done
+# grab extras from arbitrary source
+asource=/corral-secure/projects/A2CPS/products/mris/SH_spectrum_health/fmriprep/SH20135V1/rest/fmriprep
+cp -aRust ${fmriprep_dir} ${asource}/.bidsignore ${asource}/*json ${asource}/*tsv ${asource}/logs
+
+
+date 
+
+mark ${bidsdir} --anat --output-dir ${outdir} --cat-dir ${catdir} --rest --fmriprep-dir ${fmriprep_dir}
+
+date

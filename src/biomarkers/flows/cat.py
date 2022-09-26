@@ -6,7 +6,7 @@ from prefect.tasks import task_input_hash
 from prefect_dask import DaskTaskRunner
 
 from ..models.cat import CATResult
-from ..task import utils
+from .. import utils
 
 
 @prefect.task(cache_key_fn=task_input_hash)

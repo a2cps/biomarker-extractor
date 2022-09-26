@@ -9,7 +9,7 @@ from prefect_shell import shell_run_command
 from prefect_dask import DaskTaskRunner
 
 from ..models.fslanat import FSLAnatResult
-from ..task import utils
+from .. import utils
 
 
 @prefect.task
@@ -48,12 +48,10 @@ def get_cmd(anat: Path, image: Path, out: Path, basename: str) -> str:
 @prefect.flow(task_runner=DaskTaskRunner)
 def fslanat_flow(images: set[Path], out: Path) -> None:
     for image in images:
-        basename = utils._img_basename.submit(image)
+        basename = utils._img_basename(image)
         anat = _predict_fsl_anat_output.submit(out, basename)
         cmd = get_cmd.submit(anat=anat, image=image, out=out, basename=basename)
 
         last_line = shell_run_command.submit(command=cmd)
         fslanat = build_fslanat.submit(root=anat, wait_for=[last_line])
-        write_first_volumes.submit(
-            fslanat, out / f"{utils._img_basename(image)}_first.tsv"
-        )
+        write_first_volumes.submit(fslanat, out / f"{basename}_first.tsv")
