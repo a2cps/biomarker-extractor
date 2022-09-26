@@ -73,7 +73,7 @@ def comp_cor(X: np.ndarray) -> pd.DataFrame:
     assert (
         X.shape[0] >= X.shape[1]
     ), "looks like fewer samples (voxels) than features (volumes). transposed?"
-    n_tr = X.shape[0]
+    n_tr = X.shape[1]
 
     # need all components for explained_variance_ratio_ to be accurate
     pca = PCA()

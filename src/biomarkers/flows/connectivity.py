@@ -14,7 +14,7 @@ from nilearn.connectome import ConnectivityMeasure
 import prefect
 from prefect.tasks import task_input_hash
 
-# from prefect.task_runners import SequentialTaskRunner
+from prefect.task_runners import SequentialTaskRunner
 from prefect_dask import DaskTaskRunner
 
 from .. import utils
@@ -128,11 +128,29 @@ def update_confounds(
     confounds: Path,
     usecols: list[str] = [
         "trans_x",
+        "trans_x_derivative1",
+        "trans_x_power2",
+        "trans_x_derivative1_power2",
         "trans_y",
+        "trans_y_derivative1",
+        "trans_y_power2",
+        "trans_y_derivative1_power2",
         "trans_z",
+        "trans_z_derivative1",
+        "trans_z_power2",
+        "trans_z_derivative1_power2",
         "rot_x",
+        "rot_x_derivative1",
+        "rot_x_power2",
+        "rot_x_derivative1_power2",
         "rot_y",
+        "rot_y_derivative1",
+        "rot_y_power2",
+        "rot_y_derivative1_power2",
         "rot_z",
+        "rot_z_derivative1",
+        "rot_z_power2",
+        "rot_z_derivative1_power2",
     ],
     label: Literal["CSF", "WM", "WM+CSF"] = "WM+CSF",
 ) -> pd.DataFrame:
@@ -151,10 +169,10 @@ def update_confounds(
     return pd.concat([components_df, components], axis=1)
 
 
-# @prefect.flow(task_runner=SequentialTaskRunner, validate_parameters=False)
+# @prefect.flow(task_runner=SequentialTaskRunner)
 @prefect.flow(task_runner=DaskTaskRunner)
 def connectivity_flow(
-    fmripreplayout: BIDSLayout,
+    fmripreplayout,  # BIDSLayout, but hard to hint type
     out: Path,
     high_pass: float | None = 0.01,
     low_pass: float | None = 0.1,
@@ -162,19 +180,26 @@ def connectivity_flow(
     detrend=True,
     space: str = "MNI152NLin2009cAsym",
 ) -> None:
-    for sub in fmripreplayout.get_subjects():
-        for ses in fmripreplayout.get_sessions(sub=sub):
-            for run in fmripreplayout.get_runs(sub=sub, ses=ses):
+    for sub in task_utils._get_subjects(layout=fmripreplayout):
+        for ses in task_utils._get_sessions(
+            layout=fmripreplayout, layoutargs={"sub": sub}
+        ):
+            for run in task_utils._get_runs(
+                layout=fmripreplayout, layoutargs={"sub": sub, "ses": ses}
+            ):
 
                 bold = Path(
-                    fmripreplayout.get(
-                        return_type="file",
-                        sub=sub,
-                        run=run,
-                        task="rest",
-                        desc="preproc",
-                        space=space,
-                        extension=".nii.gz",
+                    task_utils._get(
+                        layout=fmripreplayout,
+                        layoutargs={
+                            "return_type": "file",
+                            "sub": sub,
+                            "run": run,
+                            "task": "rest",
+                            "desc": "preproc",
+                            "space": space,
+                            "extension": ".nii.gz",
+                        },
                     )[0]
                 )
 
@@ -199,11 +224,14 @@ def connectivity_flow(
                 confounds: pd.DataFrame = update_confounds.submit(
                     acompcor=acompcor,
                     confounds=Path(
-                        fmripreplayout.get(
-                            return_type="file",
-                            suffix="timeseries",
-                            run="1",
-                            extension=".tsv",
+                        task_utils._get(
+                            layout=fmripreplayout,
+                            layoutargs={
+                                "return_type": "file",
+                                "suffix": "timeseries",
+                                "run": run,
+                                "extension": ".tsv",
+                            },
                         )[0]
                     ),
                 )
