@@ -48,7 +48,7 @@ def get_cmd(anat: Path, image: Path, out: Path, basename: str) -> str:
 @prefect.flow(task_runner=DaskTaskRunner)
 def fslanat_flow(images: set[Path], out: Path) -> None:
     for image in images:
-        basename = utils._img_basename(image)
+        basename = utils.img_stem(image)
         anat = _predict_fsl_anat_output.submit(out, basename)
         cmd = get_cmd.submit(anat=anat, image=image, out=out, basename=basename)
 

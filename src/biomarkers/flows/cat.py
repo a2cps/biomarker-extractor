@@ -21,5 +21,5 @@ def cat_flow(cat_dir: Path, out: Path) -> None:
         # create all results
         catresult = CATResult.from_root(root=cat_dir, img=i)
         write_cat_volumes.submit(
-            catresult, out / f"{utils._img_basename(catresult.img)}_mpfc.tsv"
+            catresult, out / f"{utils.img_stem(catresult.img)}_mpfc.tsv"
         )

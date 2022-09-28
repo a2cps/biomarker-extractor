@@ -85,7 +85,7 @@ def comp_cor(X: np.ndarray) -> pd.DataFrame:
         .assign(tr=range(n_tr))
         .melt(id_vars=["tr"], var_name="component")
         .infer_objects()
-        .assign(n_features=pca.n_features_)
+        .assign(n_samples=pca.n_samples_)
     )
     out["explained_variance_ratio"] = pca.explained_variance_ratio_[out["component"]]
     # if truncate is None:
@@ -171,67 +171,27 @@ def get_acompcor_mask(
 
 @prefect.task(cache_key_fn=task_input_hash)
 def do_compcor(
-    fmripreplayout: BIDSLayout,
-    sub: str,
-    run: str,
-    ses: str,
-    space: str = "MNI152NLin2009cAsym",
+    img: Path,
+    boldref: Path,
+    probseg: list[Path],
     high_pass: float | None = None,
     low_pass: float | None = None,
     n_non_steady_state_seconds: float = 0,
     detrend: bool = False,
 ) -> pd.DataFrame:
 
-    boldref = Path(
-        fmripreplayout.get(
-            return_type="file",
-            sub=sub,
-            run=run,
-            ses=ses,
-            task="rest",
-            suffix="boldref",
-            space=space,
-            extension=".nii.gz",
-        )[0]
-    )
-
-    img = Path(
-        fmripreplayout.get(
-            return_type="file",
-            sub=sub,
-            run=run,
-            ses=ses,
-            task="rest",
-            desc="preproc",
-            space=space,
-            extension=".nii.gz",
-        )[0]
-    )
-
     compcors = []
+    masks = {
+        "GM": [x for x in probseg if "GM" in x.stem][0],
+        "CSF": [x for x in probseg if "CSF" in x.stem][0],
+        "WM": [x for x in probseg if "WM" in x.stem][0],
+    }
 
     for label in [["WM"], ["CSF"], ["WM", "CSF"]]:
         mask = get_acompcor_mask(
             target=boldref,
-            gray_matter=Path(
-                fmripreplayout.get(
-                    return_type="file",
-                    sub=sub,
-                    label="GM",
-                    suffix="probseg",
-                    space=space,
-                )[0]
-            ),
-            mask_matters=[
-                Path(x)
-                for x in fmripreplayout.get(
-                    return_type="file",
-                    sub=sub,
-                    label=label,
-                    suffix="probseg",
-                    space=space,
-                )
-            ],
+            gray_matter=masks.get("GM"),
+            mask_matters=[masks.get(key) for key in label],
         )
 
         compcors.append(
@@ -246,3 +206,4 @@ def do_compcor(
         )
 
     return pd.concat(compcors)
+

@@ -14,17 +14,17 @@ from ancpbids import BIDSLayout
 
 @prefect.flow
 def _main(
-    bidslayout: BIDSLayout,
+    bidslayout,
     output_dir: Path = Path("out"),
     cat_dir: Path | None = None,
-    fmripreplayout: BIDSLayout | None = None,
+    fmripreplayout = None,
     anat: bool = False,
     rest: bool = False,
 ) -> None:
 
     if anat:
         fslanat_flow(
-            images=set(bidslayout.get(suffix="T1w", extension=".nii.gz")),
+            images=set(bidslayout.get(suffix="T1w", extension=".nii.gz", return_type="file")),
             out=output_dir,
         )
         if cat_dir:

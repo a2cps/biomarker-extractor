@@ -169,10 +169,11 @@ def update_confounds(
     return pd.concat([components_df, components], axis=1)
 
 
-# @prefect.flow(task_runner=SequentialTaskRunner)
-@prefect.flow(task_runner=DaskTaskRunner)
+@prefect.flow(task_runner=SequentialTaskRunner, validate_parameters=False)
+#@prefect.flow(task_runner=DaskTaskRunner(cluster_kwargs={"n_workers": 50, "threads_per_worker": 1}), validate_parameters=False)
+#@prefect.flow(validate_parameters=False)
 def connectivity_flow(
-    fmripreplayout,  # BIDSLayout, but hard to hint type
+    fmripreplayout: BIDSLayout,
     out: Path,
     high_pass: float | None = 0.01,
     low_pass: float | None = 0.1,
@@ -180,78 +181,87 @@ def connectivity_flow(
     detrend=True,
     space: str = "MNI152NLin2009cAsym",
 ) -> None:
-    for sub in task_utils._get_subjects(layout=fmripreplayout):
-        for ses in task_utils._get_sessions(
-            layout=fmripreplayout, layoutargs={"sub": sub}
-        ):
-            for run in task_utils._get_runs(
-                layout=fmripreplayout, layoutargs={"sub": sub, "ses": ses}
-            ):
+    for sub in fmripreplayout.get_subjects():
+        for ses in fmripreplayout.get_sessions(sub=sub):
+            for run in fmripreplayout.get_runs(sub=sub, ses=ses):
 
-                bold = Path(
-                    task_utils._get(
-                        layout=fmripreplayout,
-                        layoutargs={
-                            "return_type": "file",
-                            "sub": sub,
-                            "run": run,
-                            "task": "rest",
-                            "desc": "preproc",
-                            "space": space,
-                            "extension": ".nii.gz",
-                        },
-                    )[0]
-                )
-
-                acompcor: pd.DataFrame = compcor.do_compcor.submit(
-                    fmripreplayout=fmripreplayout,
+                bold0 = fmripreplayout.get(
+                    return_type="file",
                     sub=sub,
                     run=run,
-                    ses=ses,
+                    task="rest",
+                    desc="preproc",
                     space=space,
-                    high_pass=high_pass,
-                    low_pass=low_pass,
-                    n_non_steady_state_seconds=n_non_steady_state_seconds,
-                    detrend=detrend,
+                    extension=".nii.gz",
                 )
 
-                task_utils.write_tsv.submit(
-                    dataframe=acompcor,
-                    filename=(out / f"{utils.img_stem(bold)}_acompcor").with_suffix(
-                        ".tsv"
-                    ),
-                )
-                confounds: pd.DataFrame = update_confounds.submit(
-                    acompcor=acompcor,
-                    confounds=Path(
-                        task_utils._get(
-                            layout=fmripreplayout,
-                            layoutargs={
-                                "return_type": "file",
-                                "suffix": "timeseries",
-                                "run": run,
-                                "extension": ".tsv",
-                            },
-                        )[0]
-                    ),
-                )
+                if len(bold0) == 1:
+                    bold = Path(bold0[0])
+                    acompcor = compcor.do_compcor.submit(
+                        img=bold,
+                        boldref=Path(
+                            fmripreplayout.get(
+                                return_type="file",
+                                sub=sub,
+                                run=run,
+                                ses=ses,
+                                task="rest",
+                                suffix="boldref",
+                                space=space,
+                                extension=".nii.gz",
+                            )[0]
+                        ),
+                        probseg=[
+                            Path(x)
+                            for x in fmripreplayout.get(
+                                return_type="file",
+                                sub=sub,
+                                suffix="probseg",
+                                space=space,
+                            )
+                        ],
+                        high_pass=high_pass,
+                        low_pass=low_pass,
+                        n_non_steady_state_seconds=n_non_steady_state_seconds,
+                        detrend=detrend,
+                    )
 
-                connectivity: pd.DataFrame = spheres_connectivity.submit(
-                    img=bold,
-                    confounds=confounds,
-                    high_pass=high_pass,
-                    low_pass=low_pass,
-                    detrend=detrend,
-                )
-                task_utils.write_tsv.submit(
-                    dataframe=connectivity,
-                    filename=(out / f"{utils.img_stem(bold)}_connectivity").with_suffix(
-                        ".tsv"
-                    ),
-                )
-                task_utils.write_tsv.submit(
-                    dataframe=confounds,
-                    filename=(out / f"{utils.img_stem(bold)}_confounds").with_suffix(
-                        ".tsv"
-                    ),
-                )
+                    confounds = update_confounds.submit(
+                        acompcor=acompcor,
+                        confounds=Path(
+                            fmripreplayout.get(
+                                return_type="file",
+                                suffix="timeseries",
+                                run=run,
+                                extension=".tsv",
+                            )[0]
+                        ),
+                    )
+
+                    task_utils.write_tsv.submit(
+                        dataframe=acompcor,
+                        filename=(out / f"{utils.img_stem(bold)}_acompcor").with_suffix(
+                            ".tsv"
+                        ),
+                    )
+
+                    connectivity = spheres_connectivity.submit(
+                        img=bold,
+                        confounds=confounds,
+                        high_pass=high_pass,
+                        low_pass=low_pass,
+                        detrend=detrend,
+                    )
+                    task_utils.write_tsv.submit(
+                        dataframe=connectivity,
+                        filename=(
+                            out / f"{utils.img_stem(bold)}_connectivity"
+                        ).with_suffix(".tsv"),
+                    )
+                    task_utils.write_tsv.submit(
+                        dataframe=confounds,
+                        filename=(
+                            out / f"{utils.img_stem(bold)}_confounds"
+                        ).with_suffix(".tsv"),
+                    )
+
