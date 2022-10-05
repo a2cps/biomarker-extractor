@@ -1,12 +1,14 @@
+from dataclasses import dataclass
 from typing import Literal
 from pathlib import Path
+import re
 
 import numpy as np
 
 import nibabel as nb
 import pandas as pd
 
-from ancpbids import BIDSLayout
+from sklearn import covariance
 
 from nilearn.maskers import NiftiSpheresMasker
 from nilearn.connectome import ConnectivityMeasure
@@ -14,8 +16,8 @@ from nilearn.connectome import ConnectivityMeasure
 import prefect
 from prefect.tasks import task_input_hash
 
-from prefect.task_runners import SequentialTaskRunner
 from prefect_dask import DaskTaskRunner
+
 
 from .. import utils
 from ..task import utils as task_utils
@@ -56,7 +58,6 @@ def spheres_connectivity(
 
     """
     for confounds,
-    - drift has been shown to be approximately quadratic, so NDMG uses a second-degree polynomial regressor.
     - Friston24,
     - top 5 principal components
     """
@@ -78,7 +79,10 @@ def spheres_connectivity(
         imgs=nii.slicer[:, :, :, -n_tr:],
         confounds=confounds,
     )
-    connectivity_measure = ConnectivityMeasure(kind="correlation")
+    connectivity_measure = ConnectivityMeasure(
+        cov_estimator=covariance.EmpiricalCovariance(store_precision=False),
+        kind="correlation",
+    )
     correlation_matrix = connectivity_measure.fit_transform([time_series]).squeeze()
     df = _mat_to_df(correlation_matrix, rois.keys()).assign(
         img=utils.img_stem(img),
@@ -86,40 +90,6 @@ def spheres_connectivity(
     )
     df["connectivity"] = np.arctanh(df["connectivity"])
     return df
-
-
-# @prefect.task
-# def do_compcor(img: Path, fmriprepoutput: fmriprep.FMRIPrepOutput) -> pd.DataFrame:
-
-#     wm_mask = get_acompcor_mask(
-#         fixed=img,
-#         gray_matter=fmriprepoutput.anat.label_GM_probseg,
-#         white_matter=fmriprepoutput.anat.label_WM_probseg,
-#         transformlist=[],
-#     )
-#     wm_compcor = compcor.get_components(img=img, mask=wm_mask).assign(
-#         label="WM", src=img.name
-#     )
-#     csf_mask = get_acompcor_mask(
-#         fixed=img,
-#         gray_matter=fmriprepoutput.anat.label_GM_probseg,
-#         csf=fmriprepoutput.anat.label_CSF_probseg,
-#         transformlist=[],
-#     )
-#     csf_compcor = compcor.get_components(img=img, mask=csf_mask).assign(
-#         label="CSF", src=img.name
-#     )
-#     combined_mask = get_acompcor_mask(
-#         fixed=img,
-#         gray_matter=fmriprepoutput.anat.label_GM_probseg,
-#         white_matter=fmriprepoutput.anat.label_WM_probseg,
-#         csf=fmriprepoutput.anat.label_CSF_probseg,
-#         transformlist=[],
-#     )
-#     combined_compcor = compcor.get_components(img=img, mask=combined_mask).assign(
-#         label="combined", src=img.name
-#     )
-#     return pd.concat([wm_compcor, csf_compcor, combined_compcor])
 
 
 @prefect.task
@@ -169,99 +139,106 @@ def update_confounds(
     return pd.concat([components_df, components], axis=1)
 
 
-@prefect.flow(task_runner=SequentialTaskRunner, validate_parameters=False)
-#@prefect.flow(task_runner=DaskTaskRunner(cluster_kwargs={"n_workers": 50, "threads_per_worker": 1}), validate_parameters=False)
-#@prefect.flow(validate_parameters=False)
+@dataclass(frozen=True)
+class ConnectivityFiles:
+    bold: Path
+    boldref: Path
+    probseg: list[Path]
+    confounds: Path
+
+
+@prefect.task
+def get_files(sub: Path, space: str) -> list[ConnectivityFiles]:
+    out = []
+    s = re.search(r"(?<=sub-)\d{5}", str(sub)).group(0)
+    for ses in sub.glob("ses*"):
+        e = re.search(r"(?<=ses-)\w{2}", str(ses)).group(0)
+        func = ses / "func"
+        for run in ["1", "2"]:
+            bold = (
+                func
+                / f"sub-{s}_ses-{e}_task-rest_run-{run}_space-{space}_desc-preproc_bold.nii.gz"
+            )
+            boldref = (
+                func
+                / f"sub-{s}_ses-{e}_task-rest_run-{run}_space-{space}_boldref.nii.gz"
+            )
+            probseg = [x for x in ses.glob(f"anat/*{space}*probseg*")]
+            confounds = (
+                func
+                / f"sub-{s}_ses-{e}_task-rest_run-{run}_desc-confounds_timeseries.tsv"
+            )
+            if (
+                bold.exists()
+                and boldref.exists()
+                and confounds.exists()
+                and all([x.exists() for x in probseg])
+            ):
+                out.append(
+                    ConnectivityFiles(
+                        bold=bold, boldref=boldref, probseg=probseg, confounds=confounds
+                    )
+                )
+
+    return out
+
+
+@prefect.flow(
+    task_runner=DaskTaskRunner(
+        cluster_kwargs={"n_workers": 10, "threads_per_worker": 5}
+    ),
+    validate_parameters=False,
+)
 def connectivity_flow(
-    fmripreplayout: BIDSLayout,
+    fmriprep_dir: Path,
     out: Path,
     high_pass: float | None = 0.01,
     low_pass: float | None = 0.1,
     n_non_steady_state_seconds: float = 15,
-    detrend=True,
+    detrend=False,
     space: str = "MNI152NLin2009cAsym",
 ) -> None:
-    for sub in fmripreplayout.get_subjects():
-        for ses in fmripreplayout.get_sessions(sub=sub):
-            for run in fmripreplayout.get_runs(sub=sub, ses=ses):
+    for s in fmriprep_dir.glob("sub-*"):
+        to_process = get_files.submit(sub=s, space=space)
+        for files in to_process.result():
+            acompcor = compcor.do_compcor.submit(
+                img=files.bold,
+                boldref=files.boldref,
+                probseg=files.probseg,
+                high_pass=high_pass,
+                low_pass=low_pass,
+                n_non_steady_state_seconds=n_non_steady_state_seconds,
+                detrend=detrend,
+            )
 
-                bold0 = fmripreplayout.get(
-                    return_type="file",
-                    sub=sub,
-                    run=run,
-                    task="rest",
-                    desc="preproc",
-                    space=space,
-                    extension=".nii.gz",
-                )
+            final_confounds = update_confounds.submit(
+                acompcor=acompcor,
+                confounds=files.confounds,
+            )
 
-                if len(bold0) == 1:
-                    bold = Path(bold0[0])
-                    acompcor = compcor.do_compcor.submit(
-                        img=bold,
-                        boldref=Path(
-                            fmripreplayout.get(
-                                return_type="file",
-                                sub=sub,
-                                run=run,
-                                ses=ses,
-                                task="rest",
-                                suffix="boldref",
-                                space=space,
-                                extension=".nii.gz",
-                            )[0]
-                        ),
-                        probseg=[
-                            Path(x)
-                            for x in fmripreplayout.get(
-                                return_type="file",
-                                sub=sub,
-                                suffix="probseg",
-                                space=space,
-                            )
-                        ],
-                        high_pass=high_pass,
-                        low_pass=low_pass,
-                        n_non_steady_state_seconds=n_non_steady_state_seconds,
-                        detrend=detrend,
-                    )
+            task_utils.write_tsv.submit(
+                dataframe=acompcor,
+                filename=(out / f"{utils.img_stem(files.bold)}_acompcor").with_suffix(
+                    ".tsv"
+                ),
+            )
 
-                    confounds = update_confounds.submit(
-                        acompcor=acompcor,
-                        confounds=Path(
-                            fmripreplayout.get(
-                                return_type="file",
-                                suffix="timeseries",
-                                run=run,
-                                extension=".tsv",
-                            )[0]
-                        ),
-                    )
-
-                    task_utils.write_tsv.submit(
-                        dataframe=acompcor,
-                        filename=(out / f"{utils.img_stem(bold)}_acompcor").with_suffix(
-                            ".tsv"
-                        ),
-                    )
-
-                    connectivity = spheres_connectivity.submit(
-                        img=bold,
-                        confounds=confounds,
-                        high_pass=high_pass,
-                        low_pass=low_pass,
-                        detrend=detrend,
-                    )
-                    task_utils.write_tsv.submit(
-                        dataframe=connectivity,
-                        filename=(
-                            out / f"{utils.img_stem(bold)}_connectivity"
-                        ).with_suffix(".tsv"),
-                    )
-                    task_utils.write_tsv.submit(
-                        dataframe=confounds,
-                        filename=(
-                            out / f"{utils.img_stem(bold)}_confounds"
-                        ).with_suffix(".tsv"),
-                    )
-
+            connectivity = spheres_connectivity.submit(
+                img=files.bold,
+                confounds=final_confounds,
+                high_pass=high_pass,
+                low_pass=low_pass,
+                detrend=detrend,
+            )
+            task_utils.write_tsv.submit(
+                dataframe=connectivity,
+                filename=(
+                    out / f"{utils.img_stem(files.bold)}_connectivity"
+                ).with_suffix(".tsv"),
+            )
+            task_utils.write_tsv.submit(
+                dataframe=final_confounds,
+                filename=(out / f"{utils.img_stem(files.bold)}_confounds").with_suffix(
+                    ".tsv"
+                ),
+            )

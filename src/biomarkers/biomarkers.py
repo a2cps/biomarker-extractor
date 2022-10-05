@@ -9,70 +9,59 @@ from .flows.fslanat import fslanat_flow
 from .flows.cat import cat_flow
 from .flows.connectivity import connectivity_flow
 
-from ancpbids import BIDSLayout
-
 
 @prefect.flow
 def _main(
-    bidslayout,
+    anats: set(Path) | None = None,
     output_dir: Path = Path("out"),
     cat_dir: Path | None = None,
-    fmripreplayout = None,
-    anat: bool = False,
-    rest: bool = False,
+    fmriprep_dir: Path | None = None,
 ) -> None:
 
-    if anat:
-        fslanat_flow(
-            images=set(bidslayout.get(suffix="T1w", extension=".nii.gz", return_type="file")),
-            out=output_dir,
-        )
-        if cat_dir:
-            cat_flow(cat_dir=cat_dir, out=output_dir)
-    if rest and fmripreplayout:
-        connectivity_flow(fmripreplayout=fmripreplayout, out=output_dir)
+    if anats:
+        fslanat_flow(images=anats, out=output_dir)
+    if cat_dir:
+        cat_flow(cat_dir=cat_dir, out=output_dir)
+    if fmriprep_dir:
+        connectivity_flow(fmripreplayout=fmriprep_dir, out=output_dir)
 
 
 @click.command(context_settings={"ignore_unknown_options": True})
-@click.argument(
-    "bids_dir",
-    required=True,
-    type=click.Path(exists=True, dir_okay=True, file_okay=False, resolve_path=True),
+@click.option(
+    "--bids-dir",
+    type=click.Path(
+        exists=True, file_okay=False, dir_okay=True, resolve_path=True, path_type=Path
+    ),
 )
 @click.option(
     "--output-dir",
     default="out",
-    type=click.Path(file_okay=False, dir_okay=True, resolve_path=True),
+    type=click.Path(
+        exists=True, file_okay=False, dir_okay=True, resolve_path=True, path_type=Path
+    ),
 )
-@click.option("--anat", default=False, is_flag=True)
-@click.option("--rest", default=False, is_flag=True)
 @click.option(
     "--cat-dir",
-    type=click.Path(file_okay=False, dir_okay=True, resolve_path=True, path_type=Path),
+    type=click.Path(
+        exists=True, file_okay=False, dir_okay=True, resolve_path=True, path_type=Path
+    ),
 )
 @click.option(
     "--fmriprep-dir",
-    type=click.Path(file_okay=False, dir_okay=True, resolve_path=True, path_type=Path),
+    type=click.Path(
+        exists=True, file_okay=False, dir_okay=True, resolve_path=True, path_type=Path
+    ),
 )
-@click.option("--anat", default=False, is_flag=True)
-@click.option("--rest", default=False, is_flag=True)
 def main(
-    bids_dir: Path,
+    bids_dir: Path | None = None,
     output_dir: Path = Path("out"),
     cat_dir: Path | None = None,
     fmriprep_dir: Path | None = None,
-    anat: bool = False,
-    rest: bool = False,
 ) -> None:
-
-    bidslayout = BIDSLayout(bids_dir)
-    fmripreplayout = BIDSLayout(bids_dir) if fmriprep_dir else None
 
     _main(
         output_dir=output_dir,
-        bidslayout=bidslayout,
-        fmripreplayout=fmripreplayout,
-        anat=anat,
-        rest=rest,
+        anats=set(x for x in bids_dir.glob("sub*/**/*T1w.nii.gz")),
+        fmriprep_dir=fmriprep_dir,
         cat_dir=cat_dir,
     )

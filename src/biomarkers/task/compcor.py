@@ -206,4 +206,3 @@ def do_compcor(
         )
 
     return pd.concat(compcors)
-

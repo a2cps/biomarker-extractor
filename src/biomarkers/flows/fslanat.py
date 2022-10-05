@@ -20,11 +20,7 @@ def _predict_fsl_anat_output(out: Path, basename: str) -> Path:
 @prefect.task
 def build_fslanat(root: Path) -> FSLAnatResult:
     """Run fsl_anat on an image and return the results."""
-    try:
-        out = FSLAnatResult.from_root(root)
-        return out
-    except pydantic.ValidationError as e:
-        raise ValueError(f"Could not parse fsl_anat results: {e}")
+    return FSLAnatResult.from_root(root)
 
 
 @prefect.task(cache_key_fn=task_input_hash)
