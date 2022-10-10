@@ -1,8 +1,6 @@
 from __future__ import annotations
 from pathlib import Path
 
-import pydantic
-
 import prefect
 from prefect.tasks import task_input_hash
 from prefect_shell import shell_run_command

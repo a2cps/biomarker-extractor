@@ -19,8 +19,6 @@ import ants
 from skimage.morphology import ball
 from scipy import ndimage
 
-from ancpbids import BIDSLayout
-
 from .. import utils
 
 # TODO:

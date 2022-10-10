@@ -1,4 +1,5 @@
 from __future__ import annotations
+import os
 from pathlib import Path
 
 import click
@@ -23,7 +24,7 @@ def _main(
     if cat_dir:
         cat_flow(cat_dir=cat_dir, out=output_dir)
     if fmriprep_dir:
-        connectivity_flow(fmripreplayout=fmriprep_dir, out=output_dir)
+        connectivity_flow(fmriprep_dir=fmriprep_dir, out=output_dir)
 
 
 @click.command(context_settings={"ignore_unknown_options": True})
@@ -52,12 +53,20 @@ def _main(
         exists=True, file_okay=False, dir_okay=True, resolve_path=True, path_type=Path
     ),
 )
+@click.option(
+    "--TMPDIR",
+    type=click.Path(exists=True, file_okay=False, dir_okay=True, resolve_path=True),
+)
 def main(
     bids_dir: Path | None = None,
     output_dir: Path = Path("out"),
     cat_dir: Path | None = None,
     fmriprep_dir: Path | None = None,
+    TMPDIR: str | None = None,
 ) -> None:
+
+    if TMPDIR:
+        os.environ["TMPDIR"] = TMPDIR
 
     _main(
         output_dir=output_dir,

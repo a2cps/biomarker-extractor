@@ -1,41 +1,27 @@
 from pathlib import Path
+import tempfile
 
 import pandas as pd
+from pyarrow import dataset
 
 import prefect
 from prefect.tasks import task_input_hash
 
 
-@prefect.task
-# @prefect.task
-def write_tsv(dataframe: pd.DataFrame, filename: Path) -> None:
-    dataframe.to_csv(filename, index=False, sep="\t")
-
-
-@prefect.task
-def _get(layout, layoutargs: dict):
-    return layout.get(**layoutargs)
-
-
-@prefect.task
-def _get_subjects(layout, layoutargs: dict | None = None) -> list[str]:
-    if layoutargs is None:
-        return layout.get_subjects()
+@prefect.task(cache_key_fn=task_input_hash)
+def write_tsv(dataframe: pd.DataFrame, filename: Path | None) -> Path:
+    if filename:
+        written = filename
+        dataframe.to_csv(filename, index=False, sep="\t")
     else:
-        return layout.get_subjects(**layoutargs)
+        with tempfile.NamedTemporaryFile(delete=False) as f:
+            dataframe.to_csv(f, index=False, sep="\t")
+            written = Path(f.name)
+    return written
 
 
 @prefect.task
-def _get_sessions(layout, layoutargs: dict | None = None) -> list[str]:
-    if layoutargs is None:
-        return layout.get_sessions()
-    else:
-        return layout.get_sessions(**layoutargs)
-
-
-@prefect.task
-def _get_runs(layout, layoutargs: dict | None = None) -> list[str]:
-    if layoutargs is None:
-        return layout.get_runs()
-    else:
-        return layout.get_runs(**layoutargs)
+def tsvs_to_parquet(tables: list[Path], base_dir=Path) -> Path:
+    d = dataset.dataset(tables)
+    dataset.write_dataset(data=d, base_dir=base_dir, format="parquet")
+    return base_dir
