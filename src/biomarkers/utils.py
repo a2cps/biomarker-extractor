@@ -1,5 +1,6 @@
 from pathlib import Path
 from importlib import resources
+from typing import Literal
 
 import numpy as np
 import pandas as pd
@@ -53,9 +54,20 @@ def get_power2011_coordinates() -> pd.DataFrame:
     )
 
 
+def get_mni6gray_mask() -> Path:
+    with resources.path("biomarkers.data", "MNI152_T1_6mm_gray.nii.gz") as f:
+        out = f
+    return out
+
+
 def sec_to_index(seconds: float, tr: float, n_tr: int) -> np.ndarray:
     return np.array([x for x in range(np.floor(seconds * tr).astype(int), n_tr)])
 
 
 def get_tr(nii: nb.Nifti1Image) -> float:
     return nii.header.get("pixdim")[4]
+
+
+def probe_cached_file(filename: Path) -> Path | None:
+    if filename.exists():
+        return filename

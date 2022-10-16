@@ -11,7 +11,7 @@ from .flows.cat import cat_flow
 from .flows.connectivity import connectivity_flow
 
 
-@prefect.flow
+# @prefect.flow
 def _main(
     anats: set(Path) | None = None,
     output_dir: Path = Path("out"),
@@ -38,7 +38,7 @@ def _main(
     "--output-dir",
     default="out",
     type=click.Path(
-        exists=True, file_okay=False, dir_okay=True, resolve_path=True, path_type=Path
+        exists=False, file_okay=False, dir_okay=True, resolve_path=True, path_type=Path
     ),
 )
 @click.option(
@@ -54,7 +54,7 @@ def _main(
     ),
 )
 @click.option(
-    "--TMPDIR",
+    "--tmpdir",
     type=click.Path(exists=True, file_okay=False, dir_okay=True, resolve_path=True),
 )
 def main(
@@ -62,15 +62,18 @@ def main(
     output_dir: Path = Path("out"),
     cat_dir: Path | None = None,
     fmriprep_dir: Path | None = None,
-    TMPDIR: str | None = None,
+    tmpdir: str | None = None,
 ) -> None:
 
-    if TMPDIR:
-        os.environ["TMPDIR"] = TMPDIR
+    if tmpdir:
+        os.environ["TMPDIR"] = tmpdir
+    if not output_dir.exists():
+        output_dir.mkdir()
 
+    anats = set(bids_dir.glob("sub*/ses*/anat/*T1w.nii.gz")) if bids_dir else None
     _main(
         output_dir=output_dir,
-        anats=set(x for x in bids_dir.glob("sub*/**/*T1w.nii.gz")),
+        anats=anats,
         fmriprep_dir=fmriprep_dir,
         cat_dir=cat_dir,
     )

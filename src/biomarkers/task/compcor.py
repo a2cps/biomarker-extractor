@@ -3,14 +3,13 @@ import numpy as np
 
 # from numpy.polynomial import Legendre
 import pandas as pd
+import pyarrow as pa
+from pyarrow import dataset
 
 from nilearn import signal
 from nilearn.masking import apply_mask
 
 from sklearn.decomposition import PCA
-
-import prefect
-from prefect.tasks import task_input_hash
 
 import nibabel as nb
 
@@ -19,10 +18,13 @@ import ants
 from skimage.morphology import ball
 from scipy import ndimage
 
+import prefect
+
 from .. import utils
 
 # TODO:
 # - detrend (https://numpy.org/doc/stable/reference/generated/numpy.polynomial.legendre.Legendre.fit.html#numpy.polynomial.legendre.Legendre.fit)
+# - check affine of mask
 
 """
 general strategy: 
@@ -85,6 +87,9 @@ def comp_cor(X: np.ndarray) -> pd.DataFrame:
         .infer_objects()
         .assign(n_samples=pca.n_samples_)
     )
+    # compfor files end up as integers
+    # need str for eventual writting to parquet
+    out.columns = out.columns.astype(str)
     out["explained_variance_ratio"] = pca.explained_variance_ratio_[out["component"]]
     # if truncate is None:
     # out = pd.DataFrame(pca.components_.T)
@@ -110,9 +115,8 @@ def get_components(
     detrend: bool = False,
 ) -> pd.DataFrame:
 
-    tr = utils.get_tr(nb.load(img))
     X: np.ndarray = apply_mask(imgs=img, mask_img=mask)
-
+    tr = utils.get_tr(nb.load(img))
     X_cleaned = signal.clean(
         X,
         detrend=detrend,
@@ -124,6 +128,7 @@ def get_components(
             seconds=n_non_steady_state_seconds, tr=tr, n_tr=X.shape[0]
         ),
     )
+    del X
 
     # compcor works on PCA of MM^T
     return comp_cor(X=X_cleaned.T)
@@ -149,58 +154,71 @@ def get_acompcor_mask(
             # subtract dilated gm from mask to make sure voxel does not contain GM
             mask_data[gm_dilated] = 0
 
-    # Resample probseg maps in BOLD space via T1w-to-BOLD transform
+    # Resample probseg maps to BOLD resolution
+    # assume already in matching space
+
+    # ants has difficulty reading and writing
     target_nii = nb.load(target)
     bold_mask = ants.resample_image_to_target(
-        image=ants.nifti_to_ants(
+        image=ants.from_nibabel(
             nb.Nifti1Image(mask_data, gm_nii.affine, gm_nii.header)
         ),
-        target=ants.nifti_to_ants(target_nii),
-        interpolator="Gaussian",
+        target=ants.from_nibabel(target_nii),
+        interp_type="lanczosWindowedSinc",
     )
 
+    return ants.to_nibabel(bold_mask > 0.99)
     # threshold/binarize
-    binary_bold_mask = bold_mask.numpy() > 0.99
+    # binary_bold_mask = bold_mask.numpy() > 0.99
+    # return nb.Nifti1Image(
+    #     binary_bold_mask, affine=target_nii.affine, header=target_nii.header
+    # )
 
-    return nb.Nifti1Image(
-        binary_bold_mask, affine=target_nii.affine, header=target_nii.header
-    )
 
-
-@prefect.task(cache_key_fn=task_input_hash)
+@prefect.task
 def do_compcor(
     img: Path,
     boldref: Path,
+    base_dir: Path,
     probseg: list[Path],
     high_pass: float | None = None,
     low_pass: float | None = None,
     n_non_steady_state_seconds: float = 0,
     detrend: bool = False,
-) -> pd.DataFrame:
+) -> Path:
 
-    compcors = []
-    masks = {
-        "GM": [x for x in probseg if "GM" in x.stem][0],
-        "CSF": [x for x in probseg if "CSF" in x.stem][0],
-        "WM": [x for x in probseg if "WM" in x.stem][0],
-    }
+    img_stem = utils.img_stem(img)
+    out = base_dir / img_stem / "part-0.parquet"
+    if utils.probe_cached_file(out):
+        return out
+    else:
+        compcors = []
+        masks = {
+            "GM": [x for x in probseg if "GM" in x.stem][0],
+            "CSF": [x for x in probseg if "CSF" in x.stem][0],
+            "WM": [x for x in probseg if "WM" in x.stem][0],
+        }
 
-    for label in [["WM"], ["CSF"], ["WM", "CSF"]]:
-        mask = get_acompcor_mask(
-            target=boldref,
-            gray_matter=masks.get("GM"),
-            mask_matters=[masks.get(key) for key in label],
+        for label in [["WM"], ["CSF"], ["WM", "CSF"]]:
+            mask = get_acompcor_mask(
+                target=boldref,
+                gray_matter=masks.get("GM"),
+                mask_matters=[masks.get(key) for key in label],
+            )
+
+            compcors.append(
+                get_components(
+                    img=img,
+                    mask=mask,
+                    high_pass=high_pass,
+                    low_pass=low_pass,
+                    n_non_steady_state_seconds=n_non_steady_state_seconds,
+                    detrend=detrend,
+                ).assign(label="+".join(label), src=img.name)
+            )
+
+        ds = pa.Table.from_pandas(pd.concat(compcors).assign(src=img_stem))
+        dataset.write_dataset(
+            ds, base_dir=base_dir, format="parquet", partitioning=["src"]
         )
-
-        compcors.append(
-            get_components(
-                img=img,
-                mask=mask,
-                high_pass=high_pass,
-                low_pass=low_pass,
-                n_non_steady_state_seconds=n_non_steady_state_seconds,
-                detrend=detrend,
-            ).assign(label="+".join(label), src=img.name)
-        )
-
-    return pd.concat(compcors)
+        return out
