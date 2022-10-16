@@ -1,5 +1,4 @@
-from dataclasses import dataclass
-from typing import Literal
+from typing import Iterable, Literal
 from pathlib import Path
 import re
 
@@ -9,6 +8,9 @@ import nibabel as nb
 import pandas as pd
 
 from sklearn import covariance
+
+import pydantic
+from pydantic.dataclasses import dataclass
 
 # from sklearn.utils import Bunch
 
@@ -26,14 +28,13 @@ import networkx as nx
 # import patsy
 
 import prefect
-
+from prefect.tasks import task_input_hash
 from prefect_dask import DaskTaskRunner
 
 # from prefect.task_runners import SequentialTaskRunner
 
 
 from .. import utils
-from ..task import utils as task_utils
 from ..task import compcor
 
 
@@ -48,14 +49,15 @@ class Coordinate:
 
 @dataclass(frozen=True)
 class ConnectivityFiles:
-    bold: Path
-    boldref: Path
-    probseg: list[Path]
-    confounds: Path
-    mask: Path
+    bold: pydantic.FilePath
+    boldref: pydantic.FilePath
+    probseg: frozenset[pydantic.FilePath]
+    confounds: pydantic.FilePath
+    mask: pydantic.FilePath
+    stem: str
 
 
-def _mat_to_df(cormat: np.ndarray, labels: list[str]) -> pd.DataFrame:
+def _mat_to_df(cormat: np.ndarray, labels: Iterable) -> pd.DataFrame:
     source = []
     target = []
     connectivity = []
@@ -73,34 +75,39 @@ def _mat_to_df(cormat: np.ndarray, labels: list[str]) -> pd.DataFrame:
     )
 
 
-def df_to_coordinates(dataframe: pd.DataFrame) -> list[Coordinate]:
-    coordinates = []
+def df_to_coordinates(dataframe: pd.DataFrame) -> frozenset[Coordinate]:
+    coordinates = set()
     for row in dataframe.itertuples():
-        coordinates.append(Coordinate(label=row.label, seed=(row.x, row.y, row.z)))
+        coordinates.add(Coordinate(label=row.label, seed=(row.x, row.y, row.z)))
 
-    return coordinates
-
-
-def get_baliki_coordinates() -> list[Coordinate]:
-    return [
-        Coordinate(label="mPFC", seed=(2, 52, -2)),
-        Coordinate(label="rNAc", seed=(10, 12, -8)),
-        Coordinate(label="rInsula", seed=(40, -6, -2)),
-        Coordinate(label="S1/M1", seed=(-32, -34, 66)),
-    ]
+    return frozenset(coordinates)
 
 
-def get_power_coordinates() -> list[Coordinate]:
+@prefect.task
+def get_baliki_coordinates() -> frozenset[Coordinate]:
+    return frozenset(
+        {
+            Coordinate(label="mPFC", seed=(2, 52, -2)),
+            Coordinate(label="rNAc", seed=(10, 12, -8)),
+            Coordinate(label="rInsula", seed=(40, -6, -2)),
+            Coordinate(label="S1/M1", seed=(-32, -34, 66)),
+        },
+    )
+
+
+def get_power_coordinates() -> frozenset[Coordinate]:
     rois: pd.DataFrame = datasets.fetch_coords_power_2011(legacy_format=False).rois
     rois.query("not roi in [127, 183, 184, 185, 243, 244, 245, 246]", inplace=True)
     rois.rename(columns={"roi": "label"}, inplace=True)
     return df_to_coordinates(rois)
 
 
+@prefect.task
+@utils.cache_dataframe
 def spheres_connectivity(
     img: Path,
-    confounds: pd.DataFrame,
-    coordinates: list[Coordinate],
+    confounds_file: Path,
+    coordinates: frozenset[Coordinate],
     radius: int = 5,  # " ... defined as 10-mm spheres centered ..."
     high_pass: float | None = None,
     low_pass: float | None = None,
@@ -112,6 +119,7 @@ def spheres_connectivity(
     - Friston24,
     - top 5 principal components
     """
+    confounds = pd.read_parquet(confounds_file)
 
     n_tr = confounds.shape[0]
     nii: nb.Nifti1Image = nb.load(img).slicer[:, :, :, -n_tr:]
@@ -133,22 +141,23 @@ def spheres_connectivity(
     )
     correlation_matrix = connectivity_measure.fit_transform([time_series]).squeeze()
     df = _mat_to_df(correlation_matrix, [x.label for x in coordinates]).assign(
-        img=utils.img_stem(img),
         confounds="+".join([str(x) for x in confounds.columns.values]),
     )
     df["connectivity"] = np.arctanh(df["connectivity"])
     return df
 
 
+@prefect.task
+@utils.cache_dataframe
 def get_gray_connectivity(
     img: Path,
-    confounds: pd.DataFrame,
+    confounds_file: Path,
     brain_mask: Path | None = None,
     mask_img: Path = utils.get_mni6gray_mask(),
     high_pass: float | None = None,
     low_pass: float | None = None,
     detrend: bool = False,
-):
+) -> pd.DataFrame:
     """
     for each fmri
     - clean signals
@@ -161,6 +170,7 @@ def get_gray_connectivity(
     Returns:
         _type_: _description_
     """
+    confounds = pd.read_parquet(confounds_file)
     n_tr = confounds.shape[0]
     nii: nb.Nifti1Image = nb.load(img).slicer[:, :, :, -n_tr:]
     nii_clean: nb.Nifti1Image = image.clean_img(
@@ -203,8 +213,10 @@ def get_gray_connectivity(
     return df
 
 
+@prefect.task
+@utils.cache_dataframe
 def update_confounds(
-    acompcor: pd.DataFrame,
+    acompcor_file: Path,
     confounds: Path,
     usecols: list[str] = [
         "trans_x",
@@ -234,9 +246,11 @@ def update_confounds(
     ],
     label: Literal["CSF", "WM", "WM+CSF"] = "WM+CSF",
 ) -> pd.DataFrame:
+    acompcor = pd.read_parquet(
+        acompcor_file, columns=["component", "tr", "value", "label"]
+    )
     components = (
-        acompcor[["component", "tr", "value", "label"]]
-        .query("label==@label and component < 5")
+        acompcor.query("label==@label and component < 5")
         .drop("label", axis=1)
         .pivot(index="tr", columns=["component"], values="value")
     )
@@ -246,14 +260,25 @@ def update_confounds(
         .iloc[-n_tr:, :]
         .reset_index(drop=True)
     )
-    return pd.concat([components_df, components], axis=1)
+    out = pd.concat([components_df, components], axis=1)
+    out.columns = out.columns.astype(str)
+    return out
 
 
-def get_files(sub: Path, space: str) -> list[ConnectivityFiles]:
-    out = []
-    s = re.search(r"(?<=sub-)\d{5}", str(sub)).group(0)
+@prefect.task(cache_key_fn=task_input_hash)
+def get_files(sub: Path, space: str) -> frozenset[ConnectivityFiles]:
+    out = set()
+    subgroup = re.search(r"(?<=sub-)\d{5}", str(sub))
+    if subgroup is None:
+        raise ValueError(f"{sub=} doesn't look like a bids sub directory")
+    else:
+        s = subgroup.group(0)
     for ses in sub.glob("ses*"):
-        e = re.search(r"(?<=ses-)\w{2}", str(ses)).group(0)
+        sesgroup = re.search(r"(?<=ses-)\w{2}", str(ses))
+        if sesgroup is None:
+            raise ValueError(f"{ses=} doesn't look like a bids ses directory")
+        else:
+            e = sesgroup.group(0)
         func = ses / "func"
         for run in ["1", "2"]:
             bold = (
@@ -264,7 +289,7 @@ def get_files(sub: Path, space: str) -> list[ConnectivityFiles]:
                 func
                 / f"sub-{s}_ses-{e}_task-rest_run-{run}_space-{space}_boldref.nii.gz"
             )
-            probseg = [x for x in ses.glob(f"anat/*{space}*probseg*")]
+            probseg = frozenset(ses.glob(f"anat/*{space}*probseg*"))
             confounds = (
                 func
                 / f"sub-{s}_ses-{e}_task-rest_run-{run}_desc-confounds_timeseries.tsv"
@@ -281,17 +306,18 @@ def get_files(sub: Path, space: str) -> list[ConnectivityFiles]:
                 and mask.exists()
                 and all([x.exists() for x in probseg])
             ):
-                out.append(
+                out.add(
                     ConnectivityFiles(
                         bold=bold,
                         boldref=boldref,
                         probseg=probseg,
                         confounds=confounds,
                         mask=mask,
+                        stem=utils.img_stem(bold),
                     )
                 )
 
-    return out
+    return frozenset(out)
 
 
 def get_nedges(n_nodes: int, density: float) -> int:
@@ -314,14 +340,17 @@ def df_to_graph(connectivity: pd.DataFrame, link_density: float) -> nx.Graph:
     return g
 
 
+@prefect.task
+@utils.cache_dataframe
 def get_degree(
-    connectivity: pd.DataFrame, src: Path, link_density: list = [0.1]
+    connectivity: Path, src: Path, link_density: frozenset[float] = frozenset({0.1})
 ) -> pd.DataFrame:
 
+    df = pd.read_parquet(connectivity)
     degrees = []
     # careful to avoid counting by 0.01
     for density in link_density:
-        g = df_to_graph(connectivity, link_density=density)
+        g = df_to_graph(df, link_density=density)
         degrees.append(
             pd.DataFrame.from_dict(dict(g.degree), orient="index", columns=["degree"])
             .reset_index()
@@ -330,11 +359,6 @@ def get_degree(
         )
 
     return pd.concat(degrees, ignore_index=True).assign(src=src.name)
-
-    # def get_schaesrcfer_atlas() -> Bunch:
-    return datasets.fetch_atlas_schaefer_2018(
-        n_rois=400, yeo_networks=7, resolution_mm=2
-    )
 
 
 # def get_hub_disruption(degrees: list[pd.DataFrame]) -> pd.DataFrame:
@@ -364,184 +388,66 @@ def get_degree(
 #     return pd.concat(hub_disruption, ignore_index=True)
 
 
-@prefect.task
-def _connectivity(
-    subdir: Path,
+# @prefect.flow(task_runner=SequentialTaskRunner)
+@prefect.flow(
+    task_runner=DaskTaskRunner(
+        cluster_kwargs={"n_workers": 5, "threads_per_worker": 5}
+    ),
+    retries=2,
+)
+def connectivity_flow(
+    subdirs: frozenset[Path],
     out: Path,
     high_pass: float | None = 0.01,
     low_pass: float | None = 0.1,
     n_non_steady_state_seconds: float = 15,
     detrend: bool = True,
+    space: str = "MNI152NLin2009cAsym",
+    link_density: frozenset[float] = frozenset({0.1}),
 ) -> None:
-    link_density = [0.1]
-    space = "MNI152NLin2009cAsym"
-    for files in get_files(sub=subdir, space=space):
-        degree_tsv = (out / f"{utils.img_stem(files.bold)}_degrees").with_suffix(".tsv")
-        connectivity_tsv = (
-            out / f"{utils.img_stem(files.bold)}_connectivity"
-        ).with_suffix(".tsv")
-        if not (degree_tsv.exists() and connectivity_tsv.exists()):
-            acompcor = compcor.do_compcor(
-                img=files.bold,
-                boldref=files.boldref,
-                probseg=files.probseg,
+    baliki_coordinates = get_baliki_coordinates.submit()
+
+    for subdir in subdirs:
+        # not submitting to enable acess of individual parts
+        for file in get_files(sub=subdir, space=space):
+            acompcor = compcor.do_compcor.submit(
+                out / "acompcor" / f"img={file.stem}/part-0.parquet",
+                img=file.bold,
+                boldref=file.boldref,
+                probseg=file.probseg,
                 high_pass=high_pass,
                 low_pass=low_pass,
                 n_non_steady_state_seconds=n_non_steady_state_seconds,
                 detrend=detrend,
             )
-            final_confounds = update_confounds(
-                acompcor=acompcor, confounds=files.confounds
+
+            final_confounds = update_confounds.submit(
+                out / "confounds" / f"img={file.stem}/part-0.parquet",
+                acompcor_file=acompcor,
+                confounds=file.confounds,
             )
-            connectivity = spheres_connectivity(
-                img=files.bold,
-                coordinates=get_baliki_coordinates(),
-                confounds=final_confounds,
+
+            spheres_connectivity.submit(
+                out / "dmn_connectivity" / f"img={file.stem}/part-0.parquet",
+                img=file.bold,
+                coordinates=baliki_coordinates,
+                confounds_file=final_confounds,
                 high_pass=high_pass,
                 low_pass=low_pass,
                 detrend=detrend,
             )
-            voxelwise_connectivity = get_gray_connectivity(
-                img=files.bold,
-                confounds=final_confounds,
+            voxelwise_connectivity = get_gray_connectivity.submit(
+                out / "voxelwise_connectivity" / f"img={file.stem}/part-0.parquet",
+                img=file.bold,
+                confounds_file=final_confounds,
                 high_pass=high_pass,
                 low_pass=low_pass,
                 detrend=detrend,
-                brain_mask=files.mask,
+                brain_mask=file.mask,
             )
-            degrees = get_degree(
+            get_degree.submit(
+                out / "degree" / f"img={file.stem}/part-0.parquet",
                 connectivity=voxelwise_connectivity,
-                src=files.bold,
+                src=file.bold,
                 link_density=link_density,
             )
-            task_utils.write_tsv(
-                dataframe=degrees,
-                filename=degree_tsv,
-            )
-
-            task_utils.write_tsv(
-                dataframe=connectivity,
-                filename=connectivity_tsv,
-            )
-
-
-# @prefect.flow(task_runner=SequentialTaskRunner)
-@prefect.flow(
-    task_runner=DaskTaskRunner(cluster_kwargs={"n_workers": 5, "threads_per_worker": 5})
-)
-def connectivity_flow(
-    subdirs: set[Path],
-    out: Path,
-    high_pass: float | None = 0.01,
-    low_pass: float | None = 0.1,
-    n_non_steady_state_seconds: float = 15,
-    detrend: bool = True,
-) -> None:
-    # acompcor_files = []
-    # confounds_files = []
-    # voxelwise_files = []
-    # power_files = []
-    # degrees_list = []
-    # baliki_coordinates = get_baliki_coordinates.submit()
-    # power_coordinates = get_power_coordinates.submit()
-    # schaefer_atlas = get_schaefer_atlas.submit()
-
-    _connectivity.map(
-        subdirs,
-        out=out,
-        high_pass=high_pass,
-        low_pass=low_pass,
-        n_non_steady_state_seconds=n_non_steady_state_seconds,
-        detrend=detrend,
-    )
-    # for files in to_process.result():
-    # acompcor = compcor.do_compcor.submit(
-    #     img=files.bold,
-    #     boldref=files.boldref,
-    #     probseg=files.probseg,
-    #     high_pass=high_pass,
-    #     low_pass=low_pass,
-    #     n_non_steady_state_seconds=n_non_steady_state_seconds,
-    #     detrend=detrend,
-    # )
-
-    # final_confounds = update_confounds.submit(
-    #     acompcor=acompcor,
-    #     confounds=files.confounds,
-    # )
-
-    # acompcor_files.append(task_utils.write_parquet.submit(dataframe=acompcor))
-
-    # connectivity = spheres_connectivity.submit(
-    #     img=files.bold,
-    #     coordinates=baliki_coordinates,
-    #     confounds=final_confounds,
-    #     high_pass=high_pass,
-    #     low_pass=low_pass,
-    #     detrend=detrend,
-    # )
-
-    # voxelwise_connectivity = get_gray_connectivity.submit(
-    #     img=files.bold,
-    #     confounds=final_confounds,
-    #     high_pass=high_pass,
-    #     low_pass=low_pass,
-    #     detrend=detrend,
-    #     brain_mask=files.mask,
-    # )
-
-    # power_connectivity = spheres_connectivity.submit(
-    #     img=files.bold,
-    #     coordinates=power_coordinates,
-    #     confounds=final_confounds,
-    #     high_pass=high_pass,
-    #     low_pass=low_pass,
-    #     detrend=detrend,
-    # )
-
-    # degrees = get_degree.submit(
-    #     connectivity=voxelwise_connectivity,
-    #     src=files.bold,
-    #     link_density=link_density,
-    # )
-    # degrees_list.append(degrees)
-
-    # voxelwise_files.append(
-    #     task_utils.write_parquet.submit(dataframe=voxelwise_connectivity)
-    # )
-
-    # task_utils.write_tsv.submit(
-    #     dataframe=degrees,
-    #     filename=(out / f"{utils.img_stem(files.bold)}_degrees").with_suffix(
-    #         ".tsv"
-    #     ),
-    # )
-
-    # task_utils.write_tsv.submit(
-    #     dataframe=connectivity,
-    #     filename=(
-    #         out / f"{utils.img_stem(files.bold)}_connectivity"
-    #     ).with_suffix(".tsv"),
-    # )
-
-    # confounds_files.append(
-    #     task_utils.write_parquet.submit(dataframe=final_confounds)
-    # )
-
-    # task_utils.combine_parquet.submit(
-    #     acompcor_files, base_dir=out / "task-rest_acompcor"
-    # )
-
-    # task_utils.combine_parquet.submit(
-    #     confounds_files, base_dir=out / "task-rest_confounds"
-    # )
-
-    # task_utils.combine_parquet.submit(
-    #     voxelwise_files, base_dir=out / "task-rest_atlas-voxelwise"
-    # )
-
-    # hub_disruption = get_hub_disruption.submit(degrees_list)
-    # task_utils.write_tsv.submit(
-    #     dataframe=hub_disruption,
-    #     filename=(out / "hubdisruption").with_suffix(".tsv"),
-    # )

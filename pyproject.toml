@@ -37,4 +37,3 @@ testpaths = ["tests"]
 
 [tool.mypy]
 mypy_path = ".typings"
-plugins = "pydantic.mypy"

@@ -1,11 +1,13 @@
 from pathlib import Path
 from importlib import resources
-from typing import Literal
+from typing import Callable, Concatenate, ParamSpec, TypeVar
 
 import numpy as np
 import pandas as pd
 
 import nibabel as nb
+
+import prefect
 
 
 def img_stem(img: Path) -> str:
@@ -68,6 +70,34 @@ def get_tr(nii: nb.Nifti1Image) -> float:
     return nii.header.get("pixdim")[4]
 
 
-def probe_cached_file(filename: Path) -> Path | None:
-    if filename.exists():
-        return filename
+P = ParamSpec("P")
+R = TypeVar("R")
+
+
+def cache_dataframe(
+    f: Callable[P, pd.DataFrame]
+) -> Callable[Concatenate[Path, P], Path]:
+    def wrapper(_filename: Path, *args: P.args, **kwargs: P.kwargs) -> Path:
+        if _filename.exists():
+            logger = prefect.get_run_logger()
+            logger.info(f"found cached {_filename}")
+        else:
+            out = f(*args, **kwargs)
+            parent = _filename.parent
+            if not parent.exists():
+                parent.mkdir(parents=True)
+            out.to_parquet(_filename)
+        return _filename
+
+    # otherwise logging won't name of wrapped function
+    # NOTE: unsure why @functools.wraps(f) doesn't work.
+    # ends up complaining about the signature
+    for attr in ("__name__", "__qualname__"):
+        try:
+            value = getattr(f, attr)
+        except AttributeError:
+            pass
+        else:
+            setattr(wrapper, attr, value)
+
+    return wrapper

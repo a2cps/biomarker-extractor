@@ -32,7 +32,6 @@ async def _fslanat(image: Path, out: Path) -> Path:
     anat = _predict_fsl_anat_output(out, basename)
 
     # if the output already exists, we don't want this to run again.
-    # if it exists, we change the command to just "echo"
     # fsl_anat automatically and always adds .anat to the value of -o, so we check for the existence
     # of that predicted output, but then feed in the unmodified value of -o to the task.
     if not anat.exists():
@@ -46,4 +45,5 @@ async def _fslanat(image: Path, out: Path) -> Path:
 
 @prefect.flow(task_runner=DaskTaskRunner)
 def fslanat_flow(images: set[Path], out: Path) -> None:
-    _fslanat.map(images, out=out)
+    for image in images:
+        _fslanat.submit(image, out=out)

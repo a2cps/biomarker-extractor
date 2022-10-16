@@ -32,4 +32,5 @@ def _cat(image: Path, cat_dir: Path, out: Path) -> Path:
 
 @prefect.flow(task_runner=DaskTaskRunner)
 def cat_flow(cat_dir: Path, out: Path) -> None:
-    _cat.map(cat_dir.glob("*.nii.gz"), cat_dir=cat_dir, out=out)
+    for anat in frozenset(cat_dir.glob("*.nii.gz")):
+        _cat.submit(anat, cat_dir=cat_dir, out=out)

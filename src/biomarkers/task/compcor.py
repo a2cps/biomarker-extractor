@@ -1,10 +1,9 @@
+from fileinput import filename
 from pathlib import Path
 import numpy as np
 
 # from numpy.polynomial import Legendre
 import pandas as pd
-import pyarrow as pa
-from pyarrow import dataset
 
 from nilearn import signal
 from nilearn.masking import apply_mask
@@ -176,49 +175,40 @@ def get_acompcor_mask(
 
 
 @prefect.task
+@utils.cache_dataframe
 def do_compcor(
     img: Path,
     boldref: Path,
-    base_dir: Path,
     probseg: list[Path],
     high_pass: float | None = None,
     low_pass: float | None = None,
     n_non_steady_state_seconds: float = 0,
     detrend: bool = False,
-) -> Path:
+) -> pd.DataFrame:
 
-    img_stem = utils.img_stem(img)
-    out = base_dir / img_stem / "part-0.parquet"
-    if utils.probe_cached_file(out):
-        return out
-    else:
-        compcors = []
-        masks = {
-            "GM": [x for x in probseg if "GM" in x.stem][0],
-            "CSF": [x for x in probseg if "CSF" in x.stem][0],
-            "WM": [x for x in probseg if "WM" in x.stem][0],
-        }
+    compcors = []
+    masks = {
+        "GM": [x for x in probseg if "GM" in x.stem][0],
+        "CSF": [x for x in probseg if "CSF" in x.stem][0],
+        "WM": [x for x in probseg if "WM" in x.stem][0],
+    }
 
-        for label in [["WM"], ["CSF"], ["WM", "CSF"]]:
-            mask = get_acompcor_mask(
-                target=boldref,
-                gray_matter=masks.get("GM"),
-                mask_matters=[masks.get(key) for key in label],
-            )
-
-            compcors.append(
-                get_components(
-                    img=img,
-                    mask=mask,
-                    high_pass=high_pass,
-                    low_pass=low_pass,
-                    n_non_steady_state_seconds=n_non_steady_state_seconds,
-                    detrend=detrend,
-                ).assign(label="+".join(label), src=img.name)
-            )
-
-        ds = pa.Table.from_pandas(pd.concat(compcors).assign(src=img_stem))
-        dataset.write_dataset(
-            ds, base_dir=base_dir, format="parquet", partitioning=["src"]
+    for label in [["WM"], ["CSF"], ["WM", "CSF"]]:
+        mask = get_acompcor_mask(
+            target=boldref,
+            gray_matter=masks["GM"],
+            mask_matters=[masks["key"] for key in label],
         )
-        return out
+
+        compcors.append(
+            get_components(
+                img=img,
+                mask=mask,
+                high_pass=high_pass,
+                low_pass=low_pass,
+                n_non_steady_state_seconds=n_non_steady_state_seconds,
+                detrend=detrend,
+            ).assign(label="+".join(label), src=img.name)
+        )
+
+    return pd.concat(compcors)
