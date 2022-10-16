@@ -1,0 +1,2 @@
+#!/bin/bash
+MYPYPATH=src mypy --namespace-packages --explicit-package-bases --exclude test --exclude tools .

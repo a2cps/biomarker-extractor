@@ -1,4 +1,3 @@
-from __future__ import annotations
 from pathlib import Path
 
 import prefect
@@ -11,19 +10,6 @@ from .. import utils
 
 def _predict_fsl_anat_output(out: Path, basename: str) -> Path:
     return Path(out / basename).with_suffix(".anat").absolute()
-
-
-def write_first_volumes(fslanat: FSLAnatResult, filename: Path) -> Path:
-    fslanat.write_volumes(filename=filename)
-    return filename
-
-
-def get_cmd(anat: Path, image: Path, out: Path, basename: str) -> str:
-    if anat.exists():
-        cmd = f"echo 'Found existing FSLAnatResult at output location, {anat}. Assuming complete, so will skip (remove {anat} to run).'"
-    else:
-        cmd = f"fsl_anat -i {image} -o {out / basename}"
-    return cmd
 
 
 @prefect.task
@@ -44,6 +30,5 @@ async def _fslanat(image: Path, out: Path) -> Path:
 
 
 @prefect.flow(task_runner=DaskTaskRunner)
-def fslanat_flow(images: set[Path], out: Path) -> None:
-    for image in images:
-        _fslanat.submit(image, out=out)
+def fslanat_flow(images: frozenset[Path], out: Path) -> None:
+    _fslanat.map(images, out=out)
