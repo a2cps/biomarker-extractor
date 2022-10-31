@@ -18,6 +18,6 @@ def _cat(image: Path, cat_dir: Path, out: Path) -> Path:
     return filename
 
 
-@prefect.flow(task_runner=DaskTaskRunner)
+@prefect.flow
 def cat_flow(cat_dir: Path, out: Path) -> None:
     _cat.map(cat_dir.glob("*.nii.gz"), cat_dir=cat_dir, out=out)

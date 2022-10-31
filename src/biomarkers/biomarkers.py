@@ -6,6 +6,7 @@ import click
 
 import prefect
 from prefect.task_runners import SequentialTaskRunner
+import prefect_dask
 from dask import config
 
 from .flows.fslanat import fslanat_flow
@@ -22,11 +23,23 @@ def _main(
 ) -> None:
 
     if anats:
-        fslanat_flow(images=anats, out=output_dir, return_state=True)
+        fslanat_flow.with_options(
+            task_runner=prefect_dask.DaskTaskRunner(
+                cluster_kwargs={"n_workers": 50, "threads_per_worker": 1}
+            )
+        )(images=anats, out=output_dir, return_state=True)
     if cat_dir:
-        cat_flow(cat_dir=cat_dir, out=output_dir, return_state=True)
+        cat_flow.with_options(
+            task_runner=prefect_dask.DaskTaskRunner(
+                cluster_kwargs={"n_workers": 50, "threads_per_worker": 1}
+            )
+        )(cat_dir=cat_dir, out=output_dir, return_state=True)
     if fmriprep_subdirs:
-        connectivity_flow(subdirs=fmriprep_subdirs, out=output_dir, return_state=True)
+        connectivity_flow.with_options(
+            task_runner=prefect_dask.DaskTaskRunner(
+                cluster_kwargs={"n_workers": 30, "threads_per_worker": 1}
+            )
+        )(subdirs=fmriprep_subdirs, out=output_dir, return_state=True)
 
 
 @click.command(context_settings={"ignore_unknown_options": True})
@@ -67,6 +80,10 @@ def main(
     tmpdir: str | None = None,
 ) -> None:
 
+    # this were all used while troubleshooting. It might be worth exploring removing them
+    # Though, it's also not clear that there is enough benefit to letting Dask spill memory onto
+    # disk, so they are staying off for now
+    # the last one would be what to try removing firstish
     config.set({"distributed.worker.memory.rebalance.measure": "managed_in_memory"})
     config.set({"distributed.worker.memory.spill": False})
     config.set({"distributed.worker.memory.target": False})

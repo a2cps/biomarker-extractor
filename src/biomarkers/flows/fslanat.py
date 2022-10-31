@@ -29,6 +29,6 @@ async def _fslanat(image: Path, out: Path) -> Path:
     return filename
 
 
-@prefect.flow(task_runner=DaskTaskRunner)
+@prefect.flow
 def fslanat_flow(images: frozenset[Path], out: Path) -> None:
     _fslanat.map(images, out=out)
