@@ -197,7 +197,7 @@ def do_compcor(
         mask = get_acompcor_mask(
             target=boldref,
             gray_matter=masks["GM"],
-            mask_matters=[masks["key"] for key in label],
+            mask_matters=[masks[key] for key in label],
         )
 
         compcors.append(

@@ -5,6 +5,7 @@ from pathlib import Path
 import click
 
 import prefect
+from prefect.task_runners import SequentialTaskRunner
 from dask import config
 
 from .flows.fslanat import fslanat_flow
@@ -12,7 +13,7 @@ from .flows.cat import cat_flow
 from .flows.connectivity import connectivity_flow
 
 
-@prefect.flow
+@prefect.flow(task_runner=SequentialTaskRunner)
 def _main(
     anats: frozenset[Path] | None = None,
     output_dir: Path = Path("out"),
@@ -21,11 +22,11 @@ def _main(
 ) -> None:
 
     if anats:
-        fslanat_flow(images=anats, out=output_dir)
+        fslanat_flow(images=anats, out=output_dir, return_state=True)
     if cat_dir:
-        cat_flow(cat_dir=cat_dir, out=output_dir)
+        cat_flow(cat_dir=cat_dir, out=output_dir, return_state=True)
     if fmriprep_subdirs:
-        connectivity_flow(subdirs=fmriprep_subdirs, out=output_dir)
+        connectivity_flow(subdirs=fmriprep_subdirs, out=output_dir, return_state=True)
 
 
 @click.command(context_settings={"ignore_unknown_options": True})

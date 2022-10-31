@@ -391,7 +391,7 @@ def get_degree(
 # @prefect.flow(task_runner=SequentialTaskRunner)
 @prefect.flow(
     task_runner=DaskTaskRunner(
-        cluster_kwargs={"n_workers": 5, "threads_per_worker": 5}
+        cluster_kwargs={"n_workers": 5, "threads_per_worker": 1}
     ),
     retries=2,
 )
