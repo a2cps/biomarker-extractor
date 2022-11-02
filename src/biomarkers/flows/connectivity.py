@@ -29,7 +29,6 @@ import networkx as nx
 
 import prefect
 from prefect.tasks import task_input_hash
-from prefect_dask import DaskTaskRunner
 
 # from prefect.task_runners import SequentialTaskRunner
 
@@ -57,7 +56,7 @@ class ConnectivityFiles:
     stem: str
 
 
-def _mat_to_df(cormat: np.ndarray, labels: Iterable) -> pd.DataFrame:
+def _mat_to_df(cormat: np.ndarray, labels: Iterable[str]) -> pd.DataFrame:
     source = []
     target = []
     connectivity = []
@@ -144,6 +143,54 @@ def spheres_connectivity(
         confounds="+".join([str(x) for x in confounds.columns.values]),
     )
     df["connectivity"] = np.arctanh(df["connectivity"])
+    return df
+
+
+@prefect.task
+@utils.cache_dataframe
+def get_labels_connectivity(
+    img: Path,
+    confounds_file: Path,
+    labels_img: Path,
+    high_pass: float | None = None,
+    low_pass: float | None = None,
+    detrend: bool = False,
+) -> pd.DataFrame:
+
+    """
+    for confounds,
+    - Friston24,
+    - top 5 principal components
+    """
+    confounds = pd.read_parquet(confounds_file)
+
+    n_tr = confounds.shape[0]
+    nii: nb.Nifti1Image = nb.load(img).slicer[:, :, :, -n_tr:]
+    masker = maskers.NiftiLabelsMasker(
+        labels_img=labels_img,
+        high_pass=high_pass,
+        low_pass=low_pass,
+        t_r=utils.get_tr(nii),
+        standardize=False,
+        standardize_confounds=False,
+        detrend=detrend,
+        resampling_target="data",
+    )
+    # confounds are already sliced
+    time_series = masker.fit_transform(imgs=nii, confounds=confounds)
+    connectivity_measure = ConnectivityMeasure(
+        cov_estimator=covariance.EmpiricalCovariance(store_precision=False),
+        kind="correlation",
+    )
+    correlation_matrix: np.ndarray = connectivity_measure.fit_transform(
+        [time_series]
+    ).squeeze()
+    df = _mat_to_df(
+        correlation_matrix, [str(x + 1) for x in range(correlation_matrix.shape[0])]
+    ).assign(
+        img=utils.img_stem(img),
+        confounds="+".join([str(x) for x in confounds.columns.values]),
+    )
     return df
 
 
@@ -389,12 +436,7 @@ def get_degree(
 
 
 # @prefect.flow(task_runner=SequentialTaskRunner)
-@prefect.flow(
-    task_runner=DaskTaskRunner(
-        cluster_kwargs={"n_workers": 5, "threads_per_worker": 1}
-    ),
-    retries=2,
-)
+@prefect.flow
 def connectivity_flow(
     subdirs: frozenset[Path],
     out: Path,
@@ -450,4 +492,13 @@ def connectivity_flow(
                 connectivity=voxelwise_connectivity,
                 src=file.bold,
                 link_density=link_density,
+            )
+            get_labels_connectivity.submit(
+                out / "labels_connectivity" / f"img={file.stem}/part-0.parquet",
+                img=file.bold,
+                confounds_file=final_confounds,
+                labels_img=utils.get_fan_atlas_file(),
+                high_pass=high_pass,
+                low_pass=low_pass,
+                detrend=detrend,
             )

@@ -1,7 +1,6 @@
 from pathlib import Path
 
 import prefect
-from prefect_dask import DaskTaskRunner
 
 from ..models.cat import CATResult
 from .. import utils

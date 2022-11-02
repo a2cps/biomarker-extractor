@@ -9,5 +9,6 @@
       "editor.defaultFormatter": "ms-python.black-formatter",
       "editor.formatOnSave": true
     },
-    "autoDocstring.docstringFormat": "google"
+    "autoDocstring.docstringFormat": "google",
+    "python.analysis.typeCheckingMode": "basic"
   }

@@ -2,7 +2,6 @@ from pathlib import Path
 
 import prefect
 from prefect_shell import shell_run_command
-from prefect_dask import DaskTaskRunner
 
 from ..models.fslanat import FSLAnatResult
 from .. import utils

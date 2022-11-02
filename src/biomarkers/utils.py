@@ -1,6 +1,6 @@
 from pathlib import Path
 from importlib import resources
-from typing import Callable, Concatenate, ParamSpec, TypeVar
+from typing import Callable, Concatenate, Literal, ParamSpec, TypeVar
 
 import numpy as np
 import pandas as pd
@@ -29,6 +29,19 @@ def get_rs2_labels() -> Path:
     with resources.path("biomarkers.data", "TD_label.nii") as f:
         labels = f
     return labels
+
+
+def get_fan_atlas_file(resolution: Literal["2mm", "3mm"] = "2mm") -> Path:
+    """Return file from ToPS model (https://doi.org/10.1038/s41591-020-1142-7)
+
+    Returns:
+        Path: Path to atlas
+    """
+    with resources.path(
+        "biomarkers.data", f"Fan_et_al_atlas_r279_MNI_{resolution}.nii.gz"
+    ) as f:
+        atlas = f
+    return atlas
 
 
 def get_power2011_coordinates_file() -> Path:
@@ -86,7 +99,7 @@ def cache_dataframe(
             parent = _filename.parent
             if not parent.exists():
                 parent.mkdir(parents=True)
-            out.to_parquet(_filename)
+            out.to_parquet(path=_filename)
         return _filename
 
     # otherwise logging won't name of wrapped function

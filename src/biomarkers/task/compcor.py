@@ -1,4 +1,4 @@
-from fileinput import filename
+from typing import Iterable
 from pathlib import Path
 import numpy as np
 
@@ -179,7 +179,7 @@ def get_acompcor_mask(
 def do_compcor(
     img: Path,
     boldref: Path,
-    probseg: list[Path],
+    probseg: Iterable[Path],
     high_pass: float | None = None,
     low_pass: float | None = None,
     n_non_steady_state_seconds: float = 0,
