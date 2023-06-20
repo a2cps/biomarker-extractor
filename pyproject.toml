@@ -27,7 +27,6 @@ dependencies = [
 
 [project.scripts]
 mark = "biomarkers.biomarkers:main"
-fslanat = "biomarkers.cli.fslanat:main"
 signature = "biomarkers.cli.signature:main"
 anat = "biomarkers.cli.anat:main"
 connectivity = "biomarkers.cli.connectivity:main"
