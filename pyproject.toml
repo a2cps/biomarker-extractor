@@ -11,7 +11,6 @@ dependencies = [
     "pandas",
     "polars",
     "prefect",
-    "prefect-dask"
 ]
 # note some dependencies only available through conda (see env.yml)
 # downloaded from channel https://fsl.fmrib.ox.ac.uk/fsldownloads/fslconda/public

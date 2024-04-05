@@ -22,7 +22,9 @@ def write_tsv(dataframe: pd.DataFrame, filename: Path | None = None) -> Path:
 
 
 @prefect.task
-def write_parquet(dataframe: pd.DataFrame, filename: Path | None = None) -> Path:
+def write_parquet(
+    dataframe: pd.DataFrame, filename: Path | None = None
+) -> Path:
     dataframe.columns = dataframe.columns.astype(str)
     if filename:
         written = filename
@@ -81,7 +83,9 @@ def update_confounds(
     label: typing.Literal["CSF", "WM", "WM+CSF"] | None = "WM+CSF",
     extra: Path | None = None,
 ) -> pd.DataFrame:
-    confounds_df = pd.read_csv(confounds, delim_whitespace=True, usecols=usecols)
+    confounds_df = pd.read_csv(
+        confounds, delim_whitespace=True, usecols=usecols
+    )
     n_tr = confounds_df.shape[0] - n_non_steady_state_tr
     components_df = confounds_df.iloc[-n_tr:, :].reset_index(drop=True)
     if extra:

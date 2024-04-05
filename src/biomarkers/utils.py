@@ -1,20 +1,13 @@
+import subprocess
 import tempfile
-from pathlib import Path
 from importlib import resources
-from typing import (
-    Callable,
-    Concatenate,
-    Literal,
-    ParamSpec,
-    TypeVar,
-    Iterable,
-)
+from pathlib import Path
+from typing import Callable, Concatenate, Iterable, Literal, ParamSpec, TypeVar
 
+import nibabel as nb
 import numpy as np
 import pandas as pd
 import polars as pl
-
-import nibabel as nb
 
 
 def img_stem(img: Path) -> str:
@@ -27,7 +20,9 @@ def get_mpfc_mask() -> Path:
     Returns:
         Path: Path to mPFC mask.
     """
-    with resources.path("biomarkers.data", "smallwood_mpfc_MNI152_1p5.nii.gz") as f:
+    with resources.path(
+        "biomarkers.data", "smallwood_mpfc_MNI152_1p5.nii.gz"
+    ) as f:
         mpfc = f
     return mpfc
 
@@ -86,12 +81,14 @@ def exclude_to_index(n_non_steady_state_tr: int, n_tr: int) -> np.ndarray:
     return np.array([x for x in range(n_non_steady_state_tr, n_tr)])
 
 
-def get_tr(nii: nb.Nifti1Image) -> float:
+def get_tr(nii: nb.nifti1.Nifti1Image) -> float:
     return nii.header.get("pixdim")[4]  # type: ignore
 
 
 def get_nps_mask(
-    weights: Literal["negative", "positive", "rois", "group", "binary"] | None = None
+    weights: (
+        Literal["negative", "positive", "rois", "group", "binary"] | None
+    ) = None
 ) -> Path:
     match weights:
         case "negative":
@@ -116,7 +113,9 @@ P = ParamSpec("P")
 R = TypeVar("R")
 
 
-def cache_nii(f: Callable[P, nb.Nifti1Image]) -> Callable[Concatenate[Path, P], Path]:
+def cache_nii(
+    f: Callable[P, nb.nifti1.Nifti1Image]
+) -> Callable[Concatenate[Path, P], Path]:
     def wrapper(_filename: Path, *args: P.args, **kwargs: P.kwargs) -> Path:
         if _filename.exists():
             print(f"found cached {_filename}")
@@ -145,7 +144,9 @@ def cache_nii(f: Callable[P, nb.Nifti1Image]) -> Callable[Concatenate[Path, P], 
 def cache_dataframe(
     f: Callable[P, pd.DataFrame | pl.DataFrame]
 ) -> Callable[Concatenate[Path | None, P], Path]:
-    def wrapper(_filename: Path | None, *args: P.args, **kwargs: P.kwargs) -> Path:
+    def wrapper(
+        _filename: Path | None, *args: P.args, **kwargs: P.kwargs
+    ) -> Path:
         if _filename and _filename.exists():
             print(f"found cached {_filename}")
             outfile = _filename
@@ -211,7 +212,7 @@ def get_poly_design(N: int, degree: int) -> np.ndarray:
     return Z
 
 
-def detrend(img: nb.Nifti1Image, mask: Path) -> nb.Nifti1Image:
+def detrend(img: nb.nifti1.Nifti1Image, mask: Path) -> nb.nifti1.Nifti1Image:
     from nilearn import masking
 
     Y = masking.apply_mask(img, mask_img=mask)
@@ -225,3 +226,9 @@ def _detrend(Y: np.ndarray) -> np.ndarray:
     X = get_poly_design(Y.shape[0], degree=3)
     beta = np.linalg.pinv(X).dot(Y)
     return Y - np.dot(X[:, 1:], beta[1:, :])
+
+
+def run_and_log_stdout(cmd: list[str], log: Path) -> str:
+    out = subprocess.run(cmd, capture_output=True, text=True)  # noqa: S603
+    log.write_text(out.stdout)
+    return out.stdout
