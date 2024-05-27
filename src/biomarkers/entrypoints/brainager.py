@@ -11,6 +11,7 @@ from biomarkers.flows import brainager
 
 
 class BrainagerEntrypoint(tapis.TapisEntrypoint):
+    n_workers: int = 1
 
     def run_flow(self) -> list[Path]:
         dask_config.set_config()
