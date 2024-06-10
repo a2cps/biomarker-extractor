@@ -1,3 +1,7 @@
+import logging
+import os
+import re
+import socket
 import subprocess
 import tempfile
 from importlib import resources
@@ -8,6 +12,16 @@ import nibabel as nb
 import numpy as np
 import pandas as pd
 import polars as pl
+
+FAILURE_LOG_DST = Path(os.environ.get("FAILURE_LOG_DST", "logs"))
+
+
+def configure_root_logger() -> None:
+    host = socket.gethostname()
+    logging.basicConfig(
+        format=f"%(asctime)s | %(levelname)-8s | {host=} | %(message)s",
+        level=logging.INFO,
+    )
 
 
 def img_stem(img: Path) -> str:
@@ -232,3 +246,34 @@ def run_and_log_stdout(cmd: list[str], log: Path) -> str:
     out = subprocess.run(cmd, capture_output=True, text=True)  # noqa: S603
     log.write_text(out.stdout)
     return out.stdout
+
+
+def mkdir_recursive(p: Path, mode: int = 0o770) -> None:
+    for parent in reversed(p.parents):
+        if not parent.exists():
+            parent.mkdir(mode=mode)
+    if not p.exists():
+        p.mkdir(mode=mode)
+
+
+def get_entity(f: Path, pattern: str) -> str:
+    possibility = re.findall(pattern, str(f))
+    if not len(possibility):
+        raise ValueError
+    return possibility[0]
+
+
+def get_sub(f: Path) -> str:
+    return get_entity(f=f, pattern=r"(?<=sub-)[a-zA-Z\d]+")
+
+
+def get_ses(f: Path) -> str:
+    return get_entity(f=f, pattern=r"(?<=ses-)[a-zA-Z\d]+")
+
+
+def get_sub_from_sublong(f: Path) -> str:
+    return get_entity(f, r"\d{5}")
+
+
+def get_ses_from_sublong(f: Path) -> str:
+    return get_entity(f, r"V[13]")
