@@ -3,15 +3,7 @@ name = "biomarkers"
 version = "0.1.0"
 readme = "README.md"
 requires-python = ">=3.9"
-dependencies = [
-    "click",
-    "nibabel",
-    "nilearn",
-    "numpy",
-    "pandas",
-    "polars",
-    "prefect",
-]
+dependencies = ["nibabel"]
 # note some dependencies only available through conda (see env.yml)
 # downloaded from channel https://fsl.fmrib.ox.ac.uk/fsldownloads/fslconda/public
 #   - bc <--- FSL sripts seem to depend on this
@@ -24,11 +16,6 @@ dependencies = [
 # FSLOUTPUTTYPE=NIFTI_GZ
 # FSLDIR=/opt/conda  ---- or, in general path_to_conda_env, e.g., $HOME/conda/envs/fsl/envs/biomarkers
 
-[project.scripts]
-mark = "biomarkers.biomarkers:main"
-signature = "biomarkers.cli.signature:main"
-anat = "biomarkers.cli.anat:main"
-connectivity = "biomarkers.cli.connectivity:main"
 
 [build-system]
 requires = ["setuptools"]

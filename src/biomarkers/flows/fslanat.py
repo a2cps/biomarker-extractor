@@ -8,9 +8,9 @@ from pathlib import Path
 import nibabel as nb
 import numpy as np
 import prefect
+import prefect.logging
 
 from biomarkers import utils
-from biomarkers.models.fslanat import FSLAnatResult
 
 
 def _predict_fsl_anat_output(out: Path, basename: str) -> Path:
@@ -151,77 +151,84 @@ def _precrop(anatdir: Path):
     )
 
 
+def _get_high_voxel_mask(t1: Path) -> Path:
+    nii: nb.nifti1.Nifti1Image = nb.nifti1.load(t1)
+    nonzero_i = np.flatnonzero(nii.get_fdata())
+    threshold = np.quantile(nii.get_fdata().flat[nonzero_i], 0.99)
+    out = t1.with_name(f"{utils.img_stem(t1)}_lesionmask.nii.gz")
+    nb.nifti1.Nifti1Image(
+        dataobj=np.asarray(nii.get_fdata() > threshold, dtype=np.int8),
+        affine=nii.affine,
+        header=nii.header,
+    ).to_filename(out)
+    return out
+
+
 @prefect.task
-def _fslanat(
+async def _fslanat(
     image: Path,
     out: Path,
     precrop: bool = False,  # noqa: FBT002, FBT001
     strongbias: bool = False,  # noqa: FBT002, FBT001
+    mask_high_voxels: bool = False,
 ):
     basename = utils.img_stem(image)
     anat = _predict_fsl_anat_output(out, basename)
+    logger = prefect.get_run_logger()
 
-    # if the output already exists, we don't want this to run again.
-    # fsl_anat automatically and always adds .anat to the value of -o, so we check for
-    # the existence of that predicted output, but then feed in the unmodified value of
-    # -o to the task
     if not anat.exists():
-        with tempfile.TemporaryDirectory(suffix=".anat") as _tmpdir:
-            tmpdir = Path(_tmpdir)
-            # (tmpdir / "T1.nii.gz").symlink_to(image)
-            shutil.copy2(image, tmpdir / "T1.nii.gz")
-            fslflags = []
-            if precrop:
-                _precrop(tmpdir)
-                fslflags += ["--nocrop", "--noreorient"]
-            if strongbias:
-                fslflags += ["--strongbias"]
+        utils.mkdir_recursive(anat)
 
-            subprocess.run(
-                [  # noqa: S603
-                    f"{os.getenv('FSLDIR')}/bin/fsl_anat",
-                    "-d",
-                    f"{tmpdir}",
-                    *fslflags,
-                ],
-                capture_output=True,
-            )
-            # test that all expected outputs exist
-            FSLAnatResult.from_root(tmpdir)
+    shutil.copyfile(image, anat / "T1.nii.gz")
 
-            # store in final destination
-            shutil.copytree(tmpdir, anat)
+    fslflags = []
+    if precrop:
+        _precrop(anat)
+        fslflags += ["--nocrop", "--noreorient"]
+    if mask_high_voxels:
+        mask = _get_high_voxel_mask(image)
+        fslflags += ["-m", str(mask)]
+    if strongbias:
+        fslflags += ["--strongbias"]
+    args = [
+        f"{os.getenv('FSLDIR')}/bin/fsl_anat",
+        "-d",
+        str(anat),
+        *fslflags,
+    ]
+    logger.info(args)
+
+    async with utils.subprocess_manager(
+        log=out / f"fslanat-{basename}.log", args=args
+    ) as proc:
+        await proc.wait()
 
 
 @prefect.flow
 def fslanat_flow(
     images: typing.Sequence[Path],
-    out: Path,
+    outdirs: typing.Sequence[Path],
     precrops: typing.Sequence[bool] | None = None,
     strongbias: typing.Sequence[bool] | None = None,
+    mask_high_voxels: typing.Sequence[bool] | None = None,
 ) -> None:
-    if precrops is None:
-        _precrops = [False] * len(images)
-    else:
-        if not len(images) == len(precrops):
-            msg = f"""
-            If precrops is provided, it must have the same lengths as images.
-            Found {len(images)=} and {len(precrops)=}
-            """
-            raise AssertionError(msg)
-        _precrops = precrops
-    if strongbias is None:
-        _strongbias = [False] * len(images)
-    else:
-        if not len(images) == len(strongbias):
-            msg = f"""
-            If strongbias is provided, it must have the same lengths as images.
-            Found {len(images)=} and {len(strongbias)=}
-            """
-            raise AssertionError(msg)
-        _strongbias = strongbias
+    _precrops = utils.compare_arg_lengths(
+        precrops, images, ("precrops", "images")
+    )
+    _strongbias = utils.compare_arg_lengths(
+        strongbias, images, ("strongbias", "images")
+    )
+    _mask_high_voxels = utils.compare_arg_lengths(
+        mask_high_voxels, images, ("mask_high_voxels", "images")
+    )
 
-    for image, precrop, strongb in zip(
-        images, _precrops, _strongbias, strict=True
+    for image, precrop, strongb, mask, out in zip(
+        images, _precrops, _strongbias, _mask_high_voxels, outdirs, strict=True
     ):
-        _fslanat.submit(image, out=out, precrop=precrop, strongbias=strongb)
+        _fslanat.submit(
+            image,
+            out=out,
+            precrop=precrop,
+            strongbias=strongb,
+            mask_high_voxels=mask,
+        )

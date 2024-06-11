@@ -1,9 +1,12 @@
+import asyncio
+import contextlib
 import logging
 import os
 import re
 import socket
 import subprocess
 import tempfile
+import typing
 from importlib import resources
 from pathlib import Path
 from typing import Callable, Concatenate, Iterable, Literal, ParamSpec, TypeVar
@@ -102,7 +105,7 @@ def get_tr(nii: nb.nifti1.Nifti1Image) -> float:
 def get_nps_mask(
     weights: (
         Literal["negative", "positive", "rois", "group", "binary"] | None
-    ) = None
+    ) = None,
 ) -> Path:
     match weights:
         case "negative":
@@ -128,7 +131,7 @@ R = TypeVar("R")
 
 
 def cache_nii(
-    f: Callable[P, nb.nifti1.Nifti1Image]
+    f: Callable[P, nb.nifti1.Nifti1Image],
 ) -> Callable[Concatenate[Path, P], Path]:
     def wrapper(_filename: Path, *args: P.args, **kwargs: P.kwargs) -> Path:
         if _filename.exists():
@@ -156,7 +159,7 @@ def cache_nii(
 
 
 def cache_dataframe(
-    f: Callable[P, pd.DataFrame | pl.DataFrame]
+    f: Callable[P, pd.DataFrame | pl.DataFrame],
 ) -> Callable[Concatenate[Path | None, P], Path]:
     def wrapper(
         _filename: Path | None, *args: P.args, **kwargs: P.kwargs
@@ -194,7 +197,7 @@ def cache_dataframe(
     return wrapper
 
 
-def _mat_to_df(cormat: np.ndarray, labels: Iterable[str]) -> pd.DataFrame:
+def mat_to_df(cormat: np.ndarray, labels: Iterable[str]) -> pd.DataFrame:
     source = []
     target = []
     connectivity = []
@@ -277,3 +280,39 @@ def get_sub_from_sublong(f: Path) -> str:
 
 def get_ses_from_sublong(f: Path) -> str:
     return get_entity(f, r"V[13]")
+
+
+def compare_arg_lengths(
+    to_check: typing.Sequence[bool] | None,
+    to_compare: typing.Sequence[Path],
+    arg_names: tuple[str, str],
+) -> typing.Sequence[bool]:
+    if to_check is None:
+        out = [False] * len(to_compare)
+    else:
+        if not len(to_check) == len(to_compare):
+            msg = f"""
+            If {arg_names[0]} is provided, it must have the same lengths as {arg_names[1]}.
+            Found len(images)={len(to_check)} and len(precrops)={len(to_compare)}
+            """
+            raise AssertionError(msg)
+        out = to_check
+
+    return out
+
+
+@contextlib.asynccontextmanager
+async def subprocess_manager(
+    log: Path, args: list[str]
+) -> typing.AsyncIterator[asyncio.subprocess.Process]:
+    logging.info(f"{args=}")
+
+    with open(log, mode="w") as stdout:
+        procs = await asyncio.create_subprocess_exec(
+            *args, stderr=subprocess.STDOUT, stdout=stdout
+        )
+        try:
+            yield procs
+        finally:
+            if procs.returncode is None:
+                procs.terminate()

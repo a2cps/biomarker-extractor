@@ -1,26 +1,19 @@
 import asyncio
 import contextlib
-from asyncio import subprocess
-from collections import abc
+import typing
 
 # TODO: add class with mechanisms for staging inputs, running flow, and copying to dest
 
 
-async def _startup() -> subprocess.Process:
+@contextlib.asynccontextmanager
+async def get_prefect() -> typing.AsyncIterator[asyncio.subprocess.Process]:
     proc = await asyncio.create_subprocess_exec(
         *["prefect", "server", "start", "--no-ui"]
     )
-
     # sleep to ensure server started
     await asyncio.sleep(10)
-
-    return proc
-
-
-@contextlib.contextmanager
-def get_prefect() -> abc.Generator[None, None, None]:
-    proc = asyncio.run(_startup())
     try:
-        yield
+        yield proc
     finally:
-        proc.terminate()
+        if proc.returncode is None:
+            proc.terminate()
