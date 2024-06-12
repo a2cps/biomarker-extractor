@@ -36,7 +36,7 @@ class TapisMPIEntrypoint(pydantic.BaseModel):
     USIZE: int = pydantic.Field(default_factory=MPI.COMM_WORLD.Get_size)
 
     @abstractmethod
-    async def run_flow(self, in_dir: Path, out_dir: Path) -> int:
+    async def run_flow(self, in_dir: Path, out_dir: Path) -> None:
         raise NotImplementedError
 
     def stage(self, dst: Path) -> Path:
@@ -53,14 +53,19 @@ class TapisMPIEntrypoint(pydantic.BaseModel):
             MPI.COMM_WORLD.barrier()
         return dst
 
-    def archive(self, src: Path, returncode: int | None) -> None:
+    def check_outputs(self, output_dir_to_check: Path) -> bool:
+        return output_dir_to_check.exists()
+
+    def archive(self, src: Path) -> None:
         for rank, dst in enumerate(self.outs):
             try:
                 if rank == self.RANK:
-                    if returncode == 0:
+                    if self.check_outputs(src):
                         logging.info(f"Copying {src} -> {dst}")
                         if not dst.exists():
-                            utils.mkdir_recursive(dst, mode=0o770)
+                            utils.mkdir_recursive(
+                                dst, mode=utils.DIR_PERMISSIONS
+                            )
                         shutil.copytree(
                             src,
                             dst,
@@ -69,7 +74,7 @@ class TapisMPIEntrypoint(pydantic.BaseModel):
                         )
                         # need one more chmod for after copytree
                         # which preserves permissions of dst itself
-                        dst.chmod(0o770)
+                        dst.chmod(utils.DIR_PERMISSIONS)
                     else:
                         # in case of failures, it's helpful to keep logs around
                         log_dst = utils.FAILURE_LOG_DST / dst.stem
@@ -77,7 +82,9 @@ class TapisMPIEntrypoint(pydantic.BaseModel):
                             f"Failure detected for {self.outs[self.RANK]=}. Copying logs to {log_dst}"
                         )
                         if not log_dst.exists():
-                            utils.mkdir_recursive(log_dst, mode=0o770)
+                            utils.mkdir_recursive(
+                                log_dst, mode=utils.DIR_PERMISSIONS
+                            )
                         for log in src.glob("*log"):
                             shutil.copyfile(log, log_dst / log.name)
                         tapis._copy_tapis_files(log_dst)
@@ -98,16 +105,12 @@ class TapisMPIEntrypoint(pydantic.BaseModel):
                     # jobs could get stuck for one process, which would prevent other tasks
                     # from archiving outputs. This forces an error if things have been
                     # going for too long
-                    returncode = await asyncio.wait_for(
+                    await asyncio.wait_for(
                         self.run_flow(tmpd_in, tmpd_out), timeout=self.timeout
                     )
-                except TimeoutError as e:
-                    logging.error(e)
-                    returncode = 1
                 except Exception as e:
-                    logging.error(f"{e}")
-                    returncode = 1
-                self.archive(tmpd_out, returncode)
+                    logging.error(e)
+                self.archive(tmpd_out)
 
     def copy_tapis_logs_to_out(self, outdirs: list[Path]) -> None:
         for rank, outdir in enumerate(outdirs):

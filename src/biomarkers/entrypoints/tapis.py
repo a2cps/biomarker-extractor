@@ -48,7 +48,7 @@ class TapisEntrypoint(pydantic.BaseModel):
                 if self.check_outputs(o):
                     logging.info(f"Copying {o} -> {dst}")
                     if not dst.exists():
-                        utils.mkdir_recursive(dst, mode=0o770)
+                        utils.mkdir_recursive(dst, mode=utils.DIR_PERMISSIONS)
                     shutil.copytree(
                         o,
                         dst,
@@ -57,7 +57,7 @@ class TapisEntrypoint(pydantic.BaseModel):
                     )
                     # need one more chmod for after copytree
                     # which preserves permissions of dst itself
-                    dst.chmod(0o770)
+                    dst.chmod(utils.DIR_PERMISSIONS)
                 else:
                     # in case of failures, it's helpful to keep logs around
                     log_dst = utils.FAILURE_LOG_DST / dst.stem
@@ -65,7 +65,9 @@ class TapisEntrypoint(pydantic.BaseModel):
                         f"Failure detected for {o}. Copying logs to {log_dst}"
                     )
                     if not log_dst.exists():
-                        utils.mkdir_recursive(log_dst, mode=0o770)
+                        utils.mkdir_recursive(
+                            log_dst, mode=utils.DIR_PERMISSIONS
+                        )
                     for log in o.glob("*log"):
                         shutil.copyfile(log, log_dst / log.name)
                     _copy_tapis_files(log_dst)

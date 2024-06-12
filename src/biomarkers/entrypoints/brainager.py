@@ -1,58 +1,112 @@
 import gzip
 import logging
+import math
 import shutil
-import typing
+import tempfile
 from pathlib import Path
 
-from biomarkers import task_runners
-from biomarkers.cli import dask_config
-from biomarkers.entrypoints import tapis
-from biomarkers.flows import brainager
+import nibabel as nb
+from nibabel import affines
+
+from biomarkers import utils
+from biomarkers.entrypoints import tapismpi
+from biomarkers.models import brainager as brainager_models
+
+# https://github.com/nipy/nitransforms/blob/0027d1b0ea752d5aa88558678d2b27510366314b/nitransforms/io/afni.py#L18
+OBLIQUITY_THRESHOLD_DEG = 0.01
 
 
-class BrainagerEntrypoint(tapis.TapisEntrypoint):
+def is_oblique(image: Path) -> bool:
+    affine = nb.nifti1.load(image).affine
+    if affine is None:
+        msg = f"Input {image=} has no affine?"
+        raise AssertionError(msg)
+
+    # https://github.com/nipy/nitransforms/blob/0027d1b0ea752d5aa88558678d2b27510366314b/nitransforms/io/afni.py#L213-L229
+    return (
+        affines.obliquity(affine).max() * 180 / math.pi
+    ) > OBLIQUITY_THRESHOLD_DEG
+
+
+def get_brainager_args(nii: Path) -> list[str]:
+    return ["brainageR", "-f", str(nii), "-o", str(nii.with_suffix(".csv"))]
+
+
+class BrainagerEntrypoint(tapismpi.TapisMPIEntrypoint):
     n_workers: int = 1
 
-    def run_flow(self) -> list[Path]:
-        dask_config.set_config()
-
-        staged_ins, staged_outs = self._stage(self.ins, self.outs)
-
-        brainager.brainager_flow.with_options(
-            task_runner=task_runners.DaskTaskRunner(
-                cluster_kwargs={
-                    "n_workers": self.n_workers,
-                    "threads_per_worker": 1,
-                    "dashboard_address": None,
-                }
+    def check_outputs(self, output_dir_to_check: Path) -> bool:
+        out = True
+        t1 = list(output_dir_to_check.glob("sub*T1w.nii"))
+        if not len(t1) == 1:
+            logging.error(
+                f"Unexpected number of niftis found in {output_dir_to_check}: {t1=}"
             )
-        )(images=staged_ins, outdirs=staged_outs, return_state=True)
+            out = False
+        try:
+            out &= isinstance(
+                brainager_models.BrainAgeResult.from_nii(t1[0]),
+                brainager_models.BrainAgeResult,
+            )
+        except Exception as e:
+            logging.error(e)
+            out = False
 
-        return staged_outs
+        return out
 
-    def _stage(
-        self,
-        ins: typing.Iterable[Path],
-        outs: typing.Iterable[Path],
-    ) -> tuple[list[Path], list[Path]]:
-        niis = []
-        output_dirs = []
+    async def deoblique(self, image: Path) -> int | None:
+        with tempfile.TemporaryDirectory() as tmpd:
+            deobliqued = Path(tmpd) / "deobliqued.nii"
+            async with utils.subprocess_manager(
+                args=[
+                    "3dWarp",
+                    "-prefix",
+                    str(deobliqued),
+                    "-cubic",
+                    "-deoblique",
+                    str(image),
+                ],
+                log=image.parent / f"3dWarp_rank-{self.RANK}.log",
+            ) as proc:
+                await proc.wait()
+            image.unlink()
+            shutil.move(deobliqued, image, copy_function=shutil.copyfile)
+        return proc.returncode
 
-        # dirs may point to broken symlinks, or folders might not exist
-        # so, need to ensure that we get one output dir for each input dir
-        for ind, outd in zip(ins, outs, strict=True):
-            logging.info(f"Looking for *T1w.nii.gz in {ind}")
-            nii = list(d for d in ind.rglob("*T1w.nii.gz"))
-            if not len(nii) == 1:
-                logging.warning(
-                    f"Unexpected number of *T1w.nii.gz found within {ind}, {len(nii)=}"
-                )
-            else:
-                logging.info(f"Staging {nii[0]}")
-                with gzip.open(nii[0], "rb") as f_in:
-                    with open(self.stage_dir / nii[0].stem, "wb") as f_out:
-                        shutil.copyfileobj(f_in, f_out)
+    async def prep(self, tmpd_in: Path, tmpd_out: Path) -> Path | None:
 
-                        niis.append(Path(f_out.name))
-                output_dirs.append(self.stage_dir / outd)
-        return niis, output_dirs
+        logging.info(f"Looking for *T1w.nii.gz in {tmpd_in}")
+        maybe_nii = list(d for d in tmpd_in.rglob("*T1w.nii.gz"))
+        if len(maybe_nii) == 0:
+            logging.error(f"Did not find any *T1w.nii.gz in {tmpd_in}")
+            return
+        elif len(maybe_nii) > 1:
+            logging.warning(
+                f"Unexpected number of  *T1w.nii.gz found in {tmpd_in}: {maybe_nii}. Taking first."
+            )
+        nii = maybe_nii[0]
+        nii_out = tmpd_out / nii.stem
+
+        logging.info(f"Staging and unzipping {nii}")
+        with gzip.open(nii, "rb") as f_in:
+            with open(nii_out, "wb") as f_out:
+                shutil.copyfileobj(f_in, f_out)
+
+        if is_oblique(nii_out):
+            logging.warning(f"Detected oblique {nii_out=}")
+            returncode = await self.deoblique(nii_out)
+            if not returncode == 0:
+                logging.error(f"Failed to deoblique {nii_out=}")
+                return
+
+        return nii_out
+
+    async def run_flow(self, tmpd_in: Path, tmpd_out: Path) -> None:
+
+        staged_in = await self.prep(tmpd_in, tmpd_out)
+        if staged_in:
+            async with utils.subprocess_manager(
+                log=tmpd_out / f"brainager_rank-{self.RANK}.log",
+                args=get_brainager_args(nii=staged_in),
+            ) as proc:
+                await proc.wait()
