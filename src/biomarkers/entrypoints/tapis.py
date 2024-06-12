@@ -1,4 +1,5 @@
 import logging
+import os
 import shutil
 import socket
 import typing
@@ -21,9 +22,10 @@ def configure_basic_logger() -> None:
 def _copy_tapis_files(outdir: Path) -> None:
     # tapis logs tend to be in the form of [jobid].{err,out}
     # this copies them to a destination folder
-    for stderr in Path.cwd().glob("*.err"):
+    cwd = Path(os.environ.get("_tapisJobWorkingDir", os.getcwd()))
+    for stderr in cwd.glob("*.err"):
         shutil.copyfile(stderr, outdir / stderr.name)
-    for stdout in Path.cwd().glob("*.out"):
+    for stdout in cwd.glob("*.out"):
         shutil.copyfile(stdout, outdir / stdout.name)
 
 
@@ -81,7 +83,7 @@ class TapisEntrypoint(pydantic.BaseModel):
 
     async def run(self) -> None:
         if not self.stage_dir.exists():
-            self.stage_dir.mkdir(parents=True)
+            utils.mkdir_recursive(self.stage_dir, mode=utils.DIR_PERMISSIONS)
         elif not self.stage_dir.is_dir():
             msg = f"stage_dir must be a directory. found {self.stage_dir}"
             raise AssertionError(msg)

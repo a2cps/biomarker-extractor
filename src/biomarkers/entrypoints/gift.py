@@ -77,36 +77,36 @@ class GIFTEntrypoint(tapismpi.TapisMPIEntrypoint):
                     await proc.wait()
                     if proc.returncode is None:
                         returncode += 1
-                        continue
+                        break
                     elif proc.returncode > 0:
                         returncode += proc.returncode
-                        continue
-                    if returncode == 0:
-                        gift_dir = out_dir / "gift"
-                        shutil.copytree(
-                            tmpd,
-                            gift_dir,
-                            dirs_exist_ok=True,
-                            copy_function=shutil.copyfile,
-                        )
-                        gift_dir.chmod(utils.DIR_PERMISSIONS)
-                        # gift offers no control over the creation of the folder
-                        # derivatives/gift, nor the file names. Since we're running
-                        # multiple model orders, we need to ensure that the
-                        # files within this folder are not overwritten with a second
-                        # config
-                        dst = gift_dir / "derivatives" / f"gift-{config_label}"
-                        src = gift_dir / "derivatives" / "gift"
-                        if dst.exists():
-                            shutil.copytree(
-                                src,
-                                dst,
-                                dirs_exist_ok=True,
-                                copy_function=shutil.copyfile,
-                            )
-                            shutil.rmtree(src)
-                        else:
-                            src.rename(dst)
+                        break
+
+                gift_dir = out_dir / "gift"
+                shutil.copytree(
+                    tmpd,
+                    gift_dir,
+                    dirs_exist_ok=True,
+                    copy_function=shutil.copyfile,
+                )
+                gift_dir.chmod(utils.DIR_PERMISSIONS)
+                # gift offers no control over the creation of the folder
+                # derivatives/gift, nor the file names. Since we're running
+                # multiple model orders, we need to ensure that the
+                # files within this folder are not overwritten with a second
+                # config
+                dst = gift_dir / "derivatives" / f"gift-{config_label}"
+                src = gift_dir / "derivatives" / "gift"
+                if dst.exists():
+                    shutil.copytree(
+                        src,
+                        dst,
+                        dirs_exist_ok=True,
+                        copy_function=shutil.copyfile,
+                    )
+                    shutil.rmtree(src)
+                else:
+                    src.rename(dst)
 
         return returncode
 

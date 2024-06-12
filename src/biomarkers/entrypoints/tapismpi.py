@@ -26,7 +26,7 @@ def configure_mpi_logger() -> None:
 
 class TapisMPIEntrypoint(pydantic.BaseModel):
 
-    ins: typing.Sequence[pydantic.DirectoryPath]
+    ins: typing.Sequence[Path]
     outs: typing.Sequence[Path]
     timeout: int | float | None = None
     stage_ignore_patterns: (
@@ -112,8 +112,13 @@ class TapisMPIEntrypoint(pydantic.BaseModel):
                     logging.error(e)
                 self.archive(tmpd_out)
 
-    def copy_tapis_logs_to_out(self, outdirs: list[Path]) -> None:
-        for rank, outdir in enumerate(outdirs):
+                # copy tapis logs at the end because archive will add more lines
+                self.copy_tapis_logs_to_out()
+
+    def copy_tapis_logs_to_out(self) -> None:
+        for rank, outdir in enumerate(self.outs):
+            # there could have been failures, so need to double-check
+            # that final output dir actually exists
             if rank == self.RANK and outdir.exists():
                 tapis._copy_tapis_files(outdir=outdir)
             # ensure that only one copy happens at a time
