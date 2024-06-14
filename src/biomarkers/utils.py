@@ -25,6 +25,7 @@ def configure_root_logger() -> None:
     logging.basicConfig(
         format=f"%(asctime)s | %(levelname)-8s | {host=} | %(message)s",
         level=logging.INFO,
+        force=True,
     )
 
 
