@@ -1,4 +1,3 @@
-import typing
 from pathlib import Path
 
 import pydantic
@@ -10,7 +9,7 @@ class BrainAgeResult(pydantic.BaseModel):
     slices: pydantic.DirectoryPath
 
     @classmethod
-    def from_nii(cls, nii: Path) -> typing.Self:
+    def from_nii(cls, nii: Path) -> "BrainAgeResult":
 
         return cls(
             volumes=nii.with_name(f"{nii.stem}_tissue_volumes.csv"),
