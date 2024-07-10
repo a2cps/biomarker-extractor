@@ -110,10 +110,11 @@ class TapisMPIEntrypoint(pydantic.BaseModel):
                     )
                 except Exception as e:
                     logging.error(e)
-                self.archive(tmpd_out)
+                finally:
+                    self.archive(tmpd_out)
 
-                # copy tapis logs at the end because archive will add more lines
-                self.copy_tapis_logs_to_out()
+                    # copy tapis logs at the end because archive will add more lines
+                    self.copy_tapis_logs_to_out()
 
     def copy_tapis_logs_to_out(self) -> None:
         for rank, outdir in enumerate(self.outs):

@@ -50,6 +50,7 @@ class FMRIPRepEntrypoint(tapismpi.TapisMPIEntrypoint):
     output_spaces: typing.Sequence[fmriprep_models.OUTPUT_SPACE] = (
         typing.get_args(fmriprep_models.OUTPUT_SPACE)
     )
+    anat_only: typing.Sequence[bool] | None = None
 
     def check_outputs(self, output_dir_to_check: Path) -> bool:
         return output_dir_to_check.exists() and (
@@ -60,6 +61,8 @@ class FMRIPRepEntrypoint(tapismpi.TapisMPIEntrypoint):
         self, bidsdir: Path, outdir: Path, work_dir: Path
     ) -> list[str]:
         args = ["fmriprep", "--notrack", "--return-all-components"]
+        if self.anat_only and self.anat_only[self.RANK]:
+            args.append("--anat-only")
         to_extend = {
             "--fs-license-file": self.fs_license_file,
             "--n-cpus": self.n_workers,
