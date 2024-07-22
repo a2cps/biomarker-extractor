@@ -1,9 +1,6 @@
 from __future__ import annotations
-from pathlib import Path
 
-import numpy as np
-import pandas as pd
-import nibabel as nb
+from pathlib import Path
 
 import pydantic
 from pydantic.dataclasses import dataclass
@@ -135,24 +132,3 @@ class CATResult:
             report=CATReport.from_root(root=root, src=src),
             surf=CATSurf.from_root(root=root, src=src),
         )
-
-    def write_volumes(
-        self,
-        filename,
-        mask: Path = utils.get_mpfc_mask(),
-    ) -> None:
-        sample_mask = np.asanyarray(
-            nb.load(mask).dataobj,
-            dtype=np.bool_,
-        )
-        modulated: nb.Nifti1Image = nb.load(self.mri.mwp1sub)
-        modulated_arr = np.asanyarray(modulated.dataobj)
-        mean = np.mean(modulated_arr, where=sample_mask)
-        d = pd.DataFrame(
-            {
-                "mPFC": mean,
-                "volume": mean * np.prod(modulated.header.get_zooms()),  # type: ignore
-            },
-            index=[self.mri.mwp1sub],
-        )
-        d.to_csv(filename, sep="\t", index_label="file")
