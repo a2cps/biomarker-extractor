@@ -16,6 +16,7 @@ class MRIQCEntrypoint(tapismpi.TapisMPIEntrypoint):
     n_workers: int | None = None
     n_threads: int | None = None
     mem_gb: int | None = None
+    verbose_reports: bool = True
 
     def check_outputs(self, output_dir_to_check: Path) -> bool:
         return output_dir_to_check.exists() and (
@@ -26,6 +27,8 @@ class MRIQCEntrypoint(tapismpi.TapisMPIEntrypoint):
         self, bidsdir: Path, outdir: Path, work_dir: Path
     ) -> list[str]:
         args = ["mriqc", "--notrack", "--no-sub"]
+        if self.verbose_reports:
+            args.append("--verbose-reports")
         to_extend = {
             "-n-cpus": self.n_workers,
             "--omp-nthreads": self.n_threads,
