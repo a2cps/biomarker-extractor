@@ -1,4 +1,5 @@
 import logging
+import shutil
 import tempfile
 import typing
 from pathlib import Path
@@ -131,5 +132,9 @@ class FMRIPRepEntrypoint(tapismpi.TapisMPIEntrypoint):
             ) as proc:
                 await proc.wait()
                 if proc.returncode and proc.returncode > 0:
+                    # remove folder so that archiving detects that there was a failure
+                    # and sends logs to failure_dst_dir
+                    if (outdir_fmriprep := tmpd_out / "fmriprep").exists():
+                        shutil.rmtree(outdir_fmriprep)
                     msg = f"fmriprep failed with {proc.returncode=}"
                     raise RuntimeError(msg)
