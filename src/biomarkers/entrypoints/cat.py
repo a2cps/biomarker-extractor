@@ -4,6 +4,7 @@ from pathlib import Path
 
 from biomarkers import datasets, utils
 from biomarkers.entrypoints import tapismpi
+from biomarkers.models import cat
 
 
 class CATEntrypoint(tapismpi.TapisMPIEntrypoint):
@@ -13,12 +14,19 @@ class CATEntrypoint(tapismpi.TapisMPIEntrypoint):
 
     def check_outputs(self, output_dir_to_check: Path) -> bool:
         out = True
-        report = list((output_dir_to_check).rglob("*pdf"))
-        if not len(report) == 1:
-            logging.error(
-                f"Unexpected number of reports found in {output_dir_to_check}: {report}"
-            )
-            out = False
+        cat12_dir = output_dir_to_check / "cat12"
+        for nii in cat12_dir.glob("*nii.gz"):
+            try:
+                out &= isinstance(
+                    cat.CATResult.from_root(cat12_dir, nii), cat.CATResult
+                )
+            except Exception as e:
+                logging.error(e)
+                out = False
+
+        # remove extra copies of input files (expect 1 nii, 1 nii.gz)
+        for nii in cat12_dir.glob("*nii*"):
+            nii.unlink()
 
         return out
 
@@ -58,10 +66,6 @@ class CATEntrypoint(tapismpi.TapisMPIEntrypoint):
             args=self.get_args(batchfile),
         ) as proc:
             await proc.wait()
-
-            # remove extra copies of input files (expect 1 nii, 1 nii.gz)
-            for nii in batchfile.parent.glob("*nii*"):
-                nii.unlink()
 
             if proc.returncode and proc.returncode > 0:
                 # remove folder so that archiving detects that there was a failure

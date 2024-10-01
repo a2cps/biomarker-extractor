@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import typing
 from pathlib import Path
 
 import pydantic
@@ -11,18 +12,14 @@ from biomarkers import utils
 @dataclass(frozen=True)
 class CATLabel:
     subdir: pydantic.DirectoryPath
-    catROIs_mat: pydantic.FilePath
-    catROIs_xml: pydantic.FilePath
     catROI_mat: pydantic.FilePath
     catROI_xml: pydantic.FilePath
 
     @classmethod
-    def from_root(cls, root: Path, src: str) -> "CATLabel":
+    def from_root(cls, root: Path, src: str) -> typing.Self:
         subdir = root / "label"
         return cls(
             subdir=subdir,
-            catROIs_mat=subdir / f"catROIs_{src}.mat",
-            catROIs_xml=subdir / f"catROIs_{src}.xml",
             catROI_mat=subdir / f"catROI_{src}.mat",
             catROI_xml=subdir / f"catROI_{src}.xml",
         )
@@ -31,21 +28,39 @@ class CATLabel:
 @dataclass(frozen=True)
 class CATMRI:
     subdir: pydantic.DirectoryPath
+    msub: pydantic.FilePath
+    misub: pydantic.FilePath
     mwp1sub: pydantic.FilePath
     mwp2sub: pydantic.FilePath
+    nsub: pydantic.FilePath
     p0sub: pydantic.FilePath
+    p1sub: pydantic.FilePath
+    p2sub: pydantic.FilePath
+    wmisub: pydantic.FilePath
     wmsub: pydantic.FilePath
+    wp0sub: pydantic.FilePath
+    wp1sub: pydantic.FilePath
+    wp2sub: pydantic.FilePath
     y_sub: pydantic.FilePath
 
     @classmethod
-    def from_root(cls, root: Path, src: str) -> CATMRI:
+    def from_root(cls, root: Path, src: str) -> typing.Self:
         subdir = root / "mri"
         return cls(
             subdir=subdir,
+            msub=(subdir / f"m{src}").with_suffix(".nii"),
+            misub=(subdir / f"mi{src}").with_suffix(".nii"),
             mwp1sub=(subdir / f"mwp1{src}").with_suffix(".nii"),
             mwp2sub=(subdir / f"mwp2{src}").with_suffix(".nii"),
+            nsub=(subdir / f"n{src}").with_suffix(".nii"),
             p0sub=(subdir / f"p0{src}").with_suffix(".nii"),
+            p1sub=(subdir / f"p1{src}").with_suffix(".nii"),
+            p2sub=(subdir / f"p2{src}").with_suffix(".nii"),
+            wp0sub=(subdir / f"p0{src}").with_suffix(".nii"),
+            wp1sub=(subdir / f"wp1{src}").with_suffix(".nii"),
+            wp2sub=(subdir / f"wp2{src}").with_suffix(".nii"),
             wmsub=(subdir / f"wm{src}").with_suffix(".nii"),
+            wmisub=(subdir / f"wmi{src}").with_suffix(".nii"),
             y_sub=(subdir / f"y_{src}").with_suffix(".nii"),
         )
 
@@ -64,7 +79,7 @@ class CATReport:
         subdir = root / "report"
         return cls(
             subdir=subdir,
-            catlog=(subdir / f"catlog_{src}.nii.txt"),
+            catlog=(subdir / f"catlog_{src}.txt"),
             catreportj=(subdir / f"catreportj_{src}").with_suffix(".jpg"),
             catreport=(subdir / f"catreport_{src}").with_suffix(".pdf"),
             cat_mat=(subdir / f"cat_{src}").with_suffix(".mat"),
