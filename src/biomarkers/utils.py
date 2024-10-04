@@ -17,7 +17,7 @@ import pandas as pd
 import polars as pl
 
 FAILURE_LOG_DST = Path(os.environ.get("FAILURE_LOG_DST", "logs"))
-DIR_PERMISSIONS = 0o770
+DIR_PERMISSIONS = 0o750
 
 
 def configure_root_logger() -> None:
