@@ -1,9 +1,11 @@
 import asyncio
 import logging
+import os
 import shutil
 import socket
 import tempfile
 import typing
+import uuid
 from abc import abstractmethod
 from pathlib import Path
 
@@ -34,6 +36,9 @@ class TapisMPIEntrypoint(pydantic.BaseModel):
     ) = None
     RANK: int = pydantic.Field(default_factory=MPI.COMM_WORLD.Get_rank)
     USIZE: int = pydantic.Field(default_factory=MPI.COMM_WORLD.Get_size)
+    job_id: str = pydantic.Field(
+        default_factory=lambda: os.environ.get("_tapisJobUUID", uuid.uuid4())
+    )
 
     @abstractmethod
     async def run_flow(self, in_dir: Path, out_dir: Path) -> None:
@@ -57,24 +62,29 @@ class TapisMPIEntrypoint(pydantic.BaseModel):
         return output_dir_to_check.exists()
 
     def archive(self, src: Path) -> None:
+        # parallel
+        tarballs: dict[int, Path] = {}
+        for dst in self.outs:
+            try:
+                if self.check_outputs(src):
+                    logging.info(f"Tar'ing {src}")
+                    tar_stem = f"uuid-{self.job_id}_rank-{self.RANK}"
+                    shutil.make_archive(tar_stem, "tar", root_dir=src)
+                    tarballs[self.RANK] = src / f"{tar_stem}.tar"
+            except Exception as e:
+                logging.error(f"Failed to tar {self.outs[self.RANK]=}: {e}")
+
+        # serial
         for rank, dst in enumerate(self.outs):
             try:
                 if rank == self.RANK:
-                    if self.check_outputs(src):
-                        logging.info(f"Copying {src} -> {dst}")
+                    if tarball := tarballs.get(self.RANK):
+                        logging.info(f"Copying {tarball} -> {dst}")
                         if not dst.exists():
                             utils.mkdir_recursive(
                                 dst, mode=utils.DIR_PERMISSIONS
                             )
-                        shutil.copytree(
-                            src,
-                            dst,
-                            dirs_exist_ok=True,
-                            copy_function=shutil.copyfile,
-                        )
-                        # need one more chmod for after copytree
-                        # which preserves permissions of dst itself
-                        dst.chmod(utils.DIR_PERMISSIONS)
+                        shutil.copyfile(tarball, dst)
                     else:
                         # in case of failures, it's helpful to keep logs around
                         log_dst = utils.FAILURE_LOG_DST / dst.stem
@@ -87,8 +97,6 @@ class TapisMPIEntrypoint(pydantic.BaseModel):
                             )
                         for log in src.glob("*log"):
                             shutil.copyfile(log, log_dst / log.name)
-                        tapis._copy_tapis_files(log_dst)
-                # ensure that only one copy happens at a time
             except Exception as e:
                 logging.error(
                     f"Failed to archive {self.outs[self.RANK]=}: {e}"
@@ -117,10 +125,23 @@ class TapisMPIEntrypoint(pydantic.BaseModel):
                     self.copy_tapis_logs_to_out()
 
     def copy_tapis_logs_to_out(self) -> None:
+        logging.info("Adding job logs to outputs")
         for rank, outdir in enumerate(self.outs):
-            # there could have been failures, so need to double-check
-            # that final output dir actually exists
-            if rank == self.RANK and outdir.exists():
-                tapis._copy_tapis_files(outdir=outdir)
-            # ensure that only one copy happens at a time
-            MPI.COMM_WORLD.barrier()
+            try:
+                if rank == self.RANK:
+                    # when there was a success, there should be a tarball in the
+                    # output folder. The out,err files need to be added
+                    for tarball in outdir.glob("*tar"):
+                        tapis._add_tapis_files_to_tarball(tarball)
+                    # if there was a failure, the logs should have been copied
+                    # into an appropriate place underneath FAILURE_LOG_DST
+                    for log_dst in utils.FAILURE_LOG_DST.glob(
+                        f"*{outdir.stem}"
+                    ):
+                        if log_dst.is_dir():
+                            tapis._copy_tapis_files(log_dst)
+            except Exception as e:
+                logging.error(f"Failed to handle job out,err: {e}")
+            finally:
+                # ensure that only one copy happens at a time
+                MPI.COMM_WORLD.barrier()
