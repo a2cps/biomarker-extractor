@@ -51,7 +51,7 @@ class CATEntrypoint(tapismpi.TapisMPIEntrypoint):
         batch = (
             datasets.get_cat_batch()
             .read_text()
-            .replace("<UNDEFINED>", f"'{str(nii_out)}'")
+            .replace("<UNDEFINED>", f"{str(nii_out)}")
         )
         batch_out = nii_out.parent / "batch.m"
         batch_out.write_text(batch)
