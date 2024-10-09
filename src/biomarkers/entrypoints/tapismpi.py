@@ -27,19 +27,12 @@ def configure_mpi_logger() -> None:
     )
 
 
-def iterate_byrank_parallel(
-    items: typing.Sequence, RANK: int
-) -> typing.Generator[Path, None, None]:
+def iterate_byrank_serial[
+    T
+](items: typing.Sequence[T], RANK: int) -> typing.Generator[T, None, None]:
     for rank, item in enumerate(items):
         if rank == RANK:
             yield item
-
-
-def iterate_byrank_serial(
-    items: typing.Sequence, RANK: int
-) -> typing.Generator[Path, None, None]:
-    for src in iterate_byrank_parallel(items, RANK):
-        yield src
         # ensure that only one copy happens at a time
         MPI.COMM_WORLD.barrier()
 
@@ -87,6 +80,7 @@ class TapisMPIEntrypoint(pydantic.BaseModel):
                     tarballs[self.RANK] = (
                         tmpd / f"uuid-{self.job_id}_rank-{self.RANK}.tar"
                     )
+                    utils.recursive_chmod(src)
                     with tarfile.open(tarballs[self.RANK], mode="w") as tf:
                         tf.add(src, arcname=".")
             except Exception as e:
