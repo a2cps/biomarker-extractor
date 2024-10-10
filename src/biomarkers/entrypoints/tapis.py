@@ -2,6 +2,7 @@ import logging
 import os
 import shutil
 import socket
+import tarfile
 import typing
 from abc import abstractmethod
 from pathlib import Path
@@ -27,6 +28,17 @@ def _copy_tapis_files(outdir: Path) -> None:
         shutil.copyfile(stderr, outdir / stderr.name)
     for stdout in cwd.glob("*.out"):
         shutil.copyfile(stdout, outdir / stdout.name)
+
+
+def _add_tapis_files_to_tarball(tarball: Path) -> None:
+    # tapis logs tend to be in the form of [jobid].{err,out}
+    # this copies them to a destination folder
+    cwd = Path(os.environ.get("_tapisJobWorkingDir", os.getcwd()))
+    with tarfile.open(tarball, "a") as tf:
+        for stderr in cwd.glob("*.err"):
+            tf.add(stderr, stderr.name)
+        for stdout in cwd.glob("*.out"):
+            tf.add(stderr, stdout.name)
 
 
 class TapisEntrypoint(pydantic.BaseModel):

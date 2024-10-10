@@ -1,9 +1,12 @@
 import asyncio
 import logging
+import os
 import shutil
 import socket
+import tarfile
 import tempfile
 import typing
+import uuid
 from abc import abstractmethod
 from pathlib import Path
 
@@ -12,6 +15,8 @@ from mpi4py import MPI
 
 from biomarkers import utils
 from biomarkers.entrypoints import tapis
+
+T = typing.TypeVar("T")
 
 
 def configure_mpi_logger() -> None:
@@ -24,6 +29,16 @@ def configure_mpi_logger() -> None:
     )
 
 
+def iterate_byrank_serial(
+    items: typing.Sequence[T], RANK: int
+) -> typing.Generator[T, None, None]:
+    for rank, item in enumerate(items):
+        if rank == RANK:
+            yield item
+        # ensure that only one copy happens at a time
+        MPI.COMM_WORLD.barrier()
+
+
 class TapisMPIEntrypoint(pydantic.BaseModel):
 
     ins: typing.Sequence[Path]
@@ -34,47 +49,70 @@ class TapisMPIEntrypoint(pydantic.BaseModel):
     ) = None
     RANK: int = pydantic.Field(default_factory=MPI.COMM_WORLD.Get_rank)
     USIZE: int = pydantic.Field(default_factory=MPI.COMM_WORLD.Get_size)
+    job_id: str = pydantic.Field(
+        default_factory=lambda: os.environ.get("_tapisJobUUID", uuid.uuid4())
+    )
 
     @abstractmethod
     async def run_flow(self, in_dir: Path, out_dir: Path) -> None:
         raise NotImplementedError
 
     def stage(self, dst: Path) -> Path:
-        for rank, src in enumerate(self.ins):
-            if rank == self.RANK:
-                logging.info(f"Staging files for {src=} -> {dst=}")
-                shutil.copytree(
-                    src,
-                    dst,
-                    ignore=self.stage_ignore_patterns,
-                    dirs_exist_ok=True,
-                )
-            # ensure that only one copy happens at a time
-            MPI.COMM_WORLD.barrier()
+        for src in iterate_byrank_serial(self.ins, self.RANK):
+            logging.info(f"Staging files for {src=} -> {dst=}")
+            shutil.copytree(
+                src,
+                dst,
+                ignore=self.stage_ignore_patterns,
+                dirs_exist_ok=True,
+            )
         return dst
 
     def check_outputs(self, output_dir_to_check: Path) -> bool:
         return output_dir_to_check.exists()
 
     def archive(self, src: Path) -> None:
-        for rank, dst in enumerate(self.outs):
+        # parallel (across mpi jobs)
+        with tempfile.TemporaryDirectory() as tmpd_:
+            tmpd = Path(tmpd_)
+            tarballs: dict[int, Path] = {}
             try:
-                if rank == self.RANK:
-                    if self.check_outputs(src):
-                        logging.info(f"Copying {src} -> {dst}")
+                if self.check_outputs(src):
+                    logging.info(f"Creating tar of {src} in {tmpd}")
+                    tarballs[self.RANK] = (
+                        tmpd / f"uuid-{self.job_id}_rank-{self.RANK}.tar"
+                    )
+                    utils.recursive_chmod(src)
+                    with tarfile.open(tarballs[self.RANK], mode="w") as tf:
+                        tf.add(src, arcname=".")
+            except Exception as e:
+                logging.error(f"Failed to tar {self.outs[self.RANK]=}: {e}")
+
+            # src (underneath /tmp) will automatically be deleted after the final copy but
+            # archiving with tar creates a duplicate of all products, which could
+            # be too much for the filesystem. So here we manually delete things.
+            # But we keep the top-level files, because those will be logs
+            # that might need saving
+            try:
+                logging.info(f"Removing unarchived products {src}")
+                for item in src.glob("*"):
+                    if item.is_dir():
+                        shutil.rmtree(src)
+            except Exception as e:
+                logging.error(
+                    f"Failed to remove unarchived products {src}: {e}"
+                )
+
+            # serial
+            for dst in iterate_byrank_serial(self.outs, self.RANK):
+                try:
+                    if tarball := tarballs.get(self.RANK):
+                        logging.info(f"Copying {tarball} -> {dst}")
                         if not dst.exists():
                             utils.mkdir_recursive(
                                 dst, mode=utils.DIR_PERMISSIONS
                             )
-                        shutil.copytree(
-                            src,
-                            dst,
-                            dirs_exist_ok=True,
-                            copy_function=shutil.copyfile,
-                        )
-                        # need one more chmod for after copytree
-                        # which preserves permissions of dst itself
-                        dst.chmod(utils.DIR_PERMISSIONS)
+                        shutil.copyfile(tarball, dst / tarball.name)
                     else:
                         # in case of failures, it's helpful to keep logs around
                         log_dst = utils.FAILURE_LOG_DST / dst.stem
@@ -87,14 +125,10 @@ class TapisMPIEntrypoint(pydantic.BaseModel):
                             )
                         for log in src.glob("*log"):
                             shutil.copyfile(log, log_dst / log.name)
-                        tapis._copy_tapis_files(log_dst)
-                # ensure that only one copy happens at a time
-            except Exception as e:
-                logging.error(
-                    f"Failed to archive {self.outs[self.RANK]=}: {e}"
-                )
-            finally:
-                MPI.COMM_WORLD.barrier()
+                except Exception as e:
+                    logging.error(
+                        f"Failed to archive {self.outs[self.RANK]=}: {e}"
+                    )
 
     async def run(self):
         with tempfile.TemporaryDirectory() as _tmpd_in:
@@ -117,10 +151,17 @@ class TapisMPIEntrypoint(pydantic.BaseModel):
                     self.copy_tapis_logs_to_out()
 
     def copy_tapis_logs_to_out(self) -> None:
-        for rank, outdir in enumerate(self.outs):
-            # there could have been failures, so need to double-check
-            # that final output dir actually exists
-            if rank == self.RANK and outdir.exists():
-                tapis._copy_tapis_files(outdir=outdir)
-            # ensure that only one copy happens at a time
-            MPI.COMM_WORLD.barrier()
+        logging.info("Adding job logs to outputs")
+        for outdir in iterate_byrank_serial(self.outs, self.RANK):
+            try:
+                # when there was a success, there should be a tarball in the
+                # output folder. The out,err files need to be added
+                for tarball in outdir.glob("*tar"):
+                    tapis._add_tapis_files_to_tarball(tarball)
+                # if there was a failure, the logs should have been copied
+                # into an appropriate place underneath FAILURE_LOG_DST
+                for log_dst in utils.FAILURE_LOG_DST.glob(f"*{outdir.stem}"):
+                    if log_dst.is_dir():
+                        tapis._copy_tapis_files(log_dst)
+            except Exception as e:
+                logging.error(f"Failed to handle job out,err: {e}")
