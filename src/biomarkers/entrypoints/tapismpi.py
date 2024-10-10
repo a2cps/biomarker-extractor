@@ -16,6 +16,8 @@ from mpi4py import MPI
 from biomarkers import utils
 from biomarkers.entrypoints import tapis
 
+T = typing.TypeVar("T")
+
 
 def configure_mpi_logger() -> None:
     host = socket.gethostname()
@@ -27,9 +29,9 @@ def configure_mpi_logger() -> None:
     )
 
 
-def iterate_byrank_serial[
-    T
-](items: typing.Sequence[T], RANK: int) -> typing.Generator[T, None, None]:
+def iterate_byrank_serial(
+    items: typing.Sequence[T], RANK: int
+) -> typing.Generator[T, None, None]:
     for rank, item in enumerate(items):
         if rank == RANK:
             yield item
