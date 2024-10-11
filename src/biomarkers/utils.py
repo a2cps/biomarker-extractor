@@ -17,7 +17,8 @@ import pandas as pd
 import polars as pl
 
 FAILURE_LOG_DST = Path(os.environ.get("FAILURE_LOG_DST", "logs"))
-DIR_PERMISSIONS = 0o770
+DIR_PERMISSIONS = 0o750
+FILE_PERMISSIONS = 0o640
 
 
 def configure_root_logger() -> None:
@@ -318,3 +319,19 @@ async def subprocess_manager(
         finally:
             if procs.returncode is None:
                 procs.terminate()
+
+
+def recursive_chmod(
+    path: Path, file_mode=FILE_PERMISSIONS, dir_mode=DIR_PERMISSIONS
+):
+
+    # Apply chmod to the current directory
+    path.chmod(dir_mode)
+
+    # Traverse subdirectories and files
+    for root, dirs, files in os.walk(path):
+        for dir_name in dirs:
+            (Path(root) / dir_name).chmod(dir_mode)
+
+        for file_name in files:
+            (Path(root) / file_name).chmod(file_mode)

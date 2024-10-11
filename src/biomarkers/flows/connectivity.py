@@ -1,40 +1,27 @@
 from pathlib import Path
 
-import numpy as np
-
+import ancpbids
 import nibabel as nb
+import numpy as np
 import pandas as pd
-
-from sklearn import covariance
-
-from pydantic.dataclasses import dataclass
-
+import prefect
 from nilearn import maskers
 from nilearn.connectome import ConnectivityMeasure
-
-import ancpbids
-
-import prefect
+from pydantic.dataclasses import dataclass
+from sklearn import covariance
 
 from biomarkers import utils
-from biomarkers.task import utils as task_utils
-from biomarkers.task import compcor
 from biomarkers.flows.signature import _get
-
-
-# TODO: remove 8 nodes from Power2011 atlas that are in the cerebellum
-
-
-@dataclass(frozen=True)
-class Coordinate:
-    label: str
-    seed: tuple[int, int, int]
+from biomarkers.task import compcor
+from biomarkers.task import utils as task_utils
 
 
 def df_to_coordinates(dataframe: pd.DataFrame) -> frozenset[Coordinate]:
     coordinates = set()
     for row in dataframe.itertuples():
-        coordinates.add(Coordinate(label=row.label, seed=(row.x, row.y, row.z)))
+        coordinates.add(
+            Coordinate(label=row.label, seed=(row.x, row.y, row.z))
+        )
 
     return frozenset(coordinates)
 
@@ -101,7 +88,7 @@ def spheres_connectivity(
         kind="correlation",
     )
     correlation_matrix = connectivity_measure.fit_transform([time_series]).squeeze()  # type: ignore
-    df = utils._mat_to_df(correlation_matrix, [x.label for x in coordinates])
+    df = utils.mat_to_df(correlation_matrix, [x.label for x in coordinates])
     df["connectivity"] = np.arctanh(df["connectivity"])
     return df
 
@@ -144,7 +131,7 @@ def get_labels_connectivity(
     correlation_matrix: np.ndarray = connectivity_measure.fit_transform(
         [time_series]
     ).squeeze()  # type: ignore
-    df = utils._mat_to_df(
+    df = utils.mat_to_df(
         correlation_matrix,
         [str(x + 1) for x in range(correlation_matrix.shape[0])],
     ).assign(
@@ -154,7 +141,7 @@ def get_labels_connectivity(
     return df
 
 
-def _get_probseg(layout, sub, ses, space) -> int:
+def _get_probseg(layout, sub, ses, space) -> list[Path]:
     return [
         _get.fn(
             layout=layout,
