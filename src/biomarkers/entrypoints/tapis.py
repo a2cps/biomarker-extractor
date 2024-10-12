@@ -61,7 +61,10 @@ class TapisEntrypoint(pydantic.BaseModel):
         return output_dir_to_check.exists()
 
     def archive(self, srcs: typing.Sequence[Path]) -> None:
+
+        print(f"{srcs=}")
         with tempfile.TemporaryDirectory() as tmpd_:
+            print(f"tmpdir created {tmpd_}")
             tmpd = Path(tmpd_)
             tarballs: dict[int, Path] = {}
             try:
@@ -91,6 +94,7 @@ class TapisEntrypoint(pydantic.BaseModel):
                         f"Failed to remove unarchived products {src}: {e}"
                     )
 
+            print(f"{self.outs=}")
             for d, dst in enumerate(self.outs):
                 try:
                     if tarball := tarballs.get(d):
@@ -141,6 +145,7 @@ class TapisEntrypoint(pydantic.BaseModel):
         async with prefect_utils.get_prefect():
             staged_outs = self.run_flow()
 
+        print("preparing to archive")
         self.archive(staged_outs)
 
         # copy tapis logs at the end because archive will add more lines
