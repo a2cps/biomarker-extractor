@@ -62,21 +62,20 @@ class TapisEntrypoint(pydantic.BaseModel):
 
     def archive(self, srcs: typing.Sequence[Path]) -> None:
 
-        print(f"{srcs=}")
         with tempfile.TemporaryDirectory() as tmpd_:
-            print(f"tmpdir created {tmpd_}")
             tmpd = Path(tmpd_)
             tarballs: dict[int, Path] = {}
             try:
                 for s, src in enumerate(srcs):
+                    print(f"checking {src=}")
                     if self.check_outputs(src):
-                        logging.info(f"Creating tar of {src} in {tmpd}")
+                        print(f"Creating tar of {src} in {tmpd}")
                         tarballs[s] = tmpd / f"uuid-{self.job_id}_rank-{s}.tar"
                         utils.recursive_chmod(src)
                         with tarfile.open(tarballs[s], mode="w") as tf:
                             tf.add(src, arcname=".")
             except Exception as e:
-                logging.error(f"Failed to tar {src}: {e}")
+                print(f"Failed to tar {src}: {e}")
 
             # src (underneath /tmp) will automatically be deleted after the final copy but
             # archiving with tar creates a duplicate of all products, which could
@@ -85,20 +84,19 @@ class TapisEntrypoint(pydantic.BaseModel):
             # that might need saving
             for src in srcs:
                 try:
-                    logging.info(f"Removing unarchived products {src}")
+                    print(f"Removing unarchived products {src}")
                     for item in src.glob("*"):
                         if item.is_dir():
                             shutil.rmtree(src)
                 except Exception as e:
-                    logging.error(
-                        f"Failed to remove unarchived products {src}: {e}"
-                    )
+                    print(f"Failed to remove unarchived products {src}: {e}")
 
             print(f"{self.outs=}")
             for d, dst in enumerate(self.outs):
+                print(f"considering {dst=}")
                 try:
                     if tarball := tarballs.get(d):
-                        logging.info(f"Copying {tarball} -> {dst}")
+                        print(f"Copying {tarball} -> {dst}")
                         if not dst.exists():
                             utils.mkdir_recursive(
                                 dst, mode=utils.DIR_PERMISSIONS
@@ -107,7 +105,7 @@ class TapisEntrypoint(pydantic.BaseModel):
                     else:
                         # in case of failures, it's helpful to keep logs around
                         log_dst = utils.FAILURE_LOG_DST / dst.stem
-                        logging.warning(
+                        print(
                             f"Failure detected for {dst}. Copying logs to {log_dst}"
                         )
                         if not log_dst.exists():
@@ -117,7 +115,7 @@ class TapisEntrypoint(pydantic.BaseModel):
                         for log in src.glob("*log"):
                             shutil.copyfile(log, log_dst / log.name)
                 except Exception as e:
-                    logging.error(f"Failed to archive {dst=}: {e}")
+                    print(f"Failed to archive {dst=}: {e}")
 
     def copy_tapis_logs_to_out(self) -> None:
         logging.info("Adding job logs to outputs")
@@ -145,7 +143,6 @@ class TapisEntrypoint(pydantic.BaseModel):
         async with prefect_utils.get_prefect():
             staged_outs = self.run_flow()
 
-        print("preparing to archive")
         self.archive(staged_outs)
 
         # copy tapis logs at the end because archive will add more lines
