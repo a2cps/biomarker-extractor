@@ -3,7 +3,9 @@ import os
 import shutil
 import socket
 import tarfile
+import tempfile
 import typing
+import uuid
 from abc import abstractmethod
 from pathlib import Path
 
@@ -47,6 +49,10 @@ class TapisEntrypoint(pydantic.BaseModel):
     outs: typing.Iterable[Path]
     stage_dir: Path
 
+    @property
+    def job_id(self) -> str:
+        return os.environ.get("_tapisJobUUID", str(uuid.uuid4()))
+
     @abstractmethod
     def run_flow(self) -> list[Path]:
         raise NotImplementedError
@@ -54,44 +60,76 @@ class TapisEntrypoint(pydantic.BaseModel):
     def check_outputs(self, output_dir_to_check: Path) -> bool:
         return output_dir_to_check.exists()
 
-    def archive(self, src: typing.Sequence[Path]) -> None:
-        for o in src:
-            logging.info(f"Attempting archive of {o}")
+    def archive(self, srcs: typing.Sequence[Path]) -> None:
+        with tempfile.TemporaryDirectory() as tmpd_:
+            tmpd = Path(tmpd_)
+            tarballs: dict[int, Path] = {}
             try:
-                dst = o.relative_to(self.stage_dir)
-                if self.check_outputs(o):
-                    logging.info(f"Copying {o} -> {dst}")
-                    if not dst.exists():
-                        utils.mkdir_recursive(dst, mode=utils.DIR_PERMISSIONS)
-                    shutil.copytree(
-                        o,
-                        dst,
-                        dirs_exist_ok=True,
-                        copy_function=shutil.copyfile,
-                    )
-                    # need one more chmod for after copytree
-                    # which preserves permissions of dst itself
-                    dst.chmod(utils.DIR_PERMISSIONS)
-                else:
-                    # in case of failures, it's helpful to keep logs around
-                    log_dst = utils.FAILURE_LOG_DST / dst.stem
-                    logging.warning(
-                        f"Failure detected for {o}. Copying logs to {log_dst}"
-                    )
-                    if not log_dst.exists():
-                        utils.mkdir_recursive(
-                            log_dst, mode=utils.DIR_PERMISSIONS
-                        )
-                    for log in o.glob("*log"):
-                        shutil.copyfile(log, log_dst / log.name)
-                    _copy_tapis_files(log_dst)
+                for s, src in enumerate(srcs):
+                    if self.check_outputs(src):
+                        logging.info(f"Creating tar of {src} in {tmpd}")
+                        tarballs[s] = tmpd / f"uuid-{self.job_id}_rank-{s}.tar"
+                        utils.recursive_chmod(src)
+                        with tarfile.open(tarballs[s], mode="w") as tf:
+                            tf.add(src, arcname=".")
             except Exception as e:
-                logging.error(f"Failed to archive {o}: {e}")
+                logging.error(f"Failed to tar {src}: {e}")
+
+            # src (underneath /tmp) will automatically be deleted after the final copy but
+            # archiving with tar creates a duplicate of all products, which could
+            # be too much for the filesystem. So here we manually delete things.
+            # But we keep the top-level files, because those will be logs
+            # that might need saving
+            for src in srcs:
+                try:
+                    logging.info(f"Removing unarchived products {src}")
+                    for item in src.glob("*"):
+                        if item.is_dir():
+                            shutil.rmtree(src)
+                except Exception as e:
+                    logging.error(
+                        f"Failed to remove unarchived products {src}: {e}"
+                    )
+
+            for d, dst in enumerate(self.outs):
+                try:
+                    if tarball := tarballs.get(d):
+                        logging.info(f"Copying {tarball} -> {dst}")
+                        if not dst.exists():
+                            utils.mkdir_recursive(
+                                dst, mode=utils.DIR_PERMISSIONS
+                            )
+                        shutil.copyfile(tarball, dst / tarball.name)
+                    else:
+                        # in case of failures, it's helpful to keep logs around
+                        log_dst = utils.FAILURE_LOG_DST / dst.stem
+                        logging.warning(
+                            f"Failure detected for {dst}. Copying logs to {log_dst}"
+                        )
+                        if not log_dst.exists():
+                            utils.mkdir_recursive(
+                                log_dst, mode=utils.DIR_PERMISSIONS
+                            )
+                        for log in src.glob("*log"):
+                            shutil.copyfile(log, log_dst / log.name)
+                except Exception as e:
+                    logging.error(f"Failed to archive {dst=}: {e}")
 
     def copy_tapis_logs_to_out(self) -> None:
+        logging.info("Adding job logs to outputs")
         for outdir in self.outs:
-            if outdir.exists():
-                _copy_tapis_files(outdir=outdir)
+            try:
+                # when there was a success, there should be a tarball in the
+                # output folder. The out,err files need to be added
+                for tarball in outdir.glob("*tar"):
+                    _add_tapis_files_to_tarball(tarball)
+                # if there was a failure, the logs should have been copied
+                # into an appropriate place underneath FAILURE_LOG_DST
+                for log_dst in utils.FAILURE_LOG_DST.glob(f"*{outdir.stem}"):
+                    if log_dst.is_dir():
+                        _copy_tapis_files(log_dst)
+            except Exception as e:
+                logging.error(f"Failed to handle job out,err: {e}")
 
     async def run(self) -> None:
         if not self.stage_dir.exists():
