@@ -253,7 +253,7 @@ def run_and_log_stdout(cmd: list[str], log: Path) -> str:
     return out.stdout
 
 
-def mkdir_recursive(p: Path, mode: int = 0o770) -> None:
+def mkdir_recursive(p: Path, mode: int = DIR_PERMISSIONS) -> None:
     for parent in reversed(p.parents):
         if not parent.exists():
             parent.mkdir(mode=mode)
