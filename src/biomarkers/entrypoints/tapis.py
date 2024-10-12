@@ -45,8 +45,8 @@ def _add_tapis_files_to_tarball(tarball: Path) -> None:
 
 class TapisEntrypoint(pydantic.BaseModel):
 
-    ins: typing.Iterable[Path]
-    outs: typing.Iterable[Path]
+    ins: typing.Sequence[Path]
+    outs: typing.Sequence[Path]
     stage_dir: Path
 
     @property
@@ -91,7 +91,6 @@ class TapisEntrypoint(pydantic.BaseModel):
                 except Exception as e:
                     print(f"Failed to remove unarchived products {src}: {e}")
 
-            print(f"{self.outs=}")
             for d, dst in enumerate(self.outs):
                 print(f"considering {dst=}")
                 try:
@@ -118,7 +117,7 @@ class TapisEntrypoint(pydantic.BaseModel):
                     print(f"Failed to archive {dst=}: {e}")
 
     def copy_tapis_logs_to_out(self) -> None:
-        logging.info("Adding job logs to outputs")
+        print("Adding job logs to outputs")
         for outdir in self.outs:
             try:
                 # when there was a success, there should be a tarball in the
@@ -131,7 +130,7 @@ class TapisEntrypoint(pydantic.BaseModel):
                     if log_dst.is_dir():
                         _copy_tapis_files(log_dst)
             except Exception as e:
-                logging.error(f"Failed to handle job out,err: {e}")
+                print(f"Failed to handle job out,err: {e}")
 
     async def run(self) -> None:
         if not self.stage_dir.exists():
