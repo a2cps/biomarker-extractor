@@ -2,7 +2,7 @@
 name = "biomarkers"
 version = "0.1.0"
 readme = "README.md"
-requires-python = ">=3.9"
+requires-python = ">=3.11"
 dependencies = ["nibabel"]
 # note some dependencies only available through conda (see env.yml)
 # downloaded from channel https://fsl.fmrib.ox.ac.uk/fsldownloads/fslconda/public
@@ -18,11 +18,19 @@ dependencies = ["nibabel"]
 
 
 [build-system]
-requires = ["setuptools"]
-build-backend = "setuptools.build_meta"
+requires = ["hatchling"]
+build-backend = "hatchling.build"
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 
 [tool.mypy]
 mypy_path = ".typings"
+
+[tool.uv]
+dev-dependencies = [
+    "pre-commit>=4.0.1",
+]
+
+[tool.ruff]
+exclude = ["tools", "src/biomarkers/flows/connectivity.py"]

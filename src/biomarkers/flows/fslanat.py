@@ -212,9 +212,7 @@ def fslanat_flow(
     strongbias: typing.Sequence[bool] | None = None,
     mask_high_voxels: typing.Sequence[bool] | None = None,
 ) -> None:
-    _precrops = utils.compare_arg_lengths(
-        precrops, images, ("precrops", "images")
-    )
+    _precrops = utils.compare_arg_lengths(precrops, images, ("precrops", "images"))
     _strongbias = utils.compare_arg_lengths(
         strongbias, images, ("strongbias", "images")
     )

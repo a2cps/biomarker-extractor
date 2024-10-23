@@ -117,12 +117,8 @@ class FIRSTResults:
             R_Puta=FIRSTROI.from_nameroot("R_Puta", root=root),
             L_Thal=FIRSTROI.from_nameroot("L_Thal", root=root),
             R_Thal=FIRSTROI.from_nameroot("R_Thal", root=root),
-            T1_first_all_fast_firstseg=Path(
-                root / "T1_first_all_fast_firstseg.nii.gz"
-            ),
-            T1_first_all_fast_origsegs=Path(
-                root / "T1_first_all_fast_origsegs.nii.gz"
-            ),
+            T1_first_all_fast_firstseg=Path(root / "T1_first_all_fast_firstseg.nii.gz"),
+            T1_first_all_fast_origsegs=Path(root / "T1_first_all_fast_origsegs.nii.gz"),
         )
 
 
@@ -174,16 +170,13 @@ class FSLAnatResult:
             first_results=FIRSTResults.from_root(root / "first_results"),
             lesionmask=root / "lesionmask.nii.gz",
             lesionmaskinv=root / "lesionmaskinv.nii.gz",
-            MNI152_T1_2mm_brain_mask_dil1=root
-            / "MNI152_T1_2mm_brain_mask_dil1.nii.gz",
+            MNI152_T1_2mm_brain_mask_dil1=root / "MNI152_T1_2mm_brain_mask_dil1.nii.gz",
             MNI_to_T1_nonlin_field=root / "MNI_to_T1_nonlin_field.nii.gz",
             T1=root / "T1.nii.gz",
             T1_biascorr=root / "T1_biascorr.nii.gz",
             T1_biascorr_bet_skull=Path(root / "T1_biascorr_bet_skull.nii.gz"),
             T1_biascorr_brain=Path(root / "T1_biascorr_brain.nii.gz"),
-            T1_biascorr_brain_mask=Path(
-                root / "T1_biascorr_brain_mask.nii.gz"
-            ),
+            T1_biascorr_brain_mask=Path(root / "T1_biascorr_brain_mask.nii.gz"),
             T1_biascorr_to_std_sub=Path(root / "T1_biascorr_to_std_sub.mat"),
             T1_fast_bias=Path(root / "T1_fast_bias.nii.gz"),
             T1_fast_mixeltype=Path(root / "T1_fast_mixeltype.nii.gz"),
@@ -206,12 +199,8 @@ class FSLAnatResult:
             T1_to_MNI_lin=Path(root / "T1_to_MNI_lin.nii.gz"),
             T1_to_MNI_nonlin=Path(root / "T1_to_MNI_nonlin.nii.gz"),
             T1_to_MNI_nonlin_=Path(root / "T1_to_MNI_nonlin.txt"),
-            T1_to_MNI_nonlin_coeff=Path(
-                root / "T1_to_MNI_nonlin_coeff.nii.gz"
-            ),
-            T1_to_MNI_nonlin_field=Path(
-                root / "T1_to_MNI_nonlin_field.nii.gz"
-            ),
+            T1_to_MNI_nonlin_coeff=Path(root / "T1_to_MNI_nonlin_coeff.nii.gz"),
+            T1_to_MNI_nonlin_field=Path(root / "T1_to_MNI_nonlin_field.nii.gz"),
             T1_to_MNI_nonlin_jac=Path(root / "T1_to_MNI_nonlin_jac.nii.gz"),
             T1_vols=Path(root / "T1_vols.txt"),
             T12std_skullcon=Path(root / "T12std_skullcon.mat"),
@@ -239,9 +228,7 @@ class FSLAnatResult:
     ) -> pd.DataFrame:
         """Write the volumes to a csv."""
         nii = np.asanyarray(
-            nb.loadsave.load(
-                self.first_results.T1_first_all_fast_firstseg
-            ).get_fdata(),
+            nb.loadsave.load(self.first_results.T1_first_all_fast_firstseg).get_fdata(),
             dtype=np.uint8,
         )
         vol_dict = {}
@@ -255,9 +242,7 @@ class FSLAnatResult:
                 }
             )
         volumes = (
-            pd.DataFrame.from_dict(
-                vol_dict, orient="index", columns=["volume"]
-            )
+            pd.DataFrame.from_dict(vol_dict, orient="index", columns=["volume"])
             .rename_axis("region")
             .reset_index()
         )
@@ -272,16 +257,12 @@ class FSLAnatResult:
         lines = self.T1_vols.read_text().splitlines()
         return pd.DataFrame(
             {
-                "t1_to_mni_scaling": [
-                    float(re.findall(r"\d+\.\d+", lines[0])[0])
-                ],
+                "t1_to_mni_scaling": [float(re.findall(r"\d+\.\d+", lines[0])[0])],
                 "t1_space_orig_volume": [
                     int(
                         re.findall(r" \d+", lines[1])[0]
                     )  # NOTE: space in pattern required
                 ],
-                "t1_space_mni_volume": [
-                    float(re.findall(r"\d+\.\d+", lines[2])[0])
-                ],
+                "t1_space_mni_volume": [float(re.findall(r"\d+\.\d+", lines[2])[0])],
             }
         )

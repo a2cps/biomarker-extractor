@@ -44,7 +44,6 @@ def _add_tapis_files_to_tarball(tarball: Path) -> None:
 
 
 class TapisEntrypoint(pydantic.BaseModel):
-
     ins: typing.Sequence[Path]
     outs: typing.Sequence[Path]
     stage_dir: Path
@@ -61,7 +60,6 @@ class TapisEntrypoint(pydantic.BaseModel):
         return output_dir_to_check.exists()
 
     def archive(self, srcs: typing.Sequence[Path]) -> None:
-
         with tempfile.TemporaryDirectory() as tmpd_:
             tmpd = Path(tmpd_)
             tarballs: dict[int, Path] = {}
@@ -97,20 +95,14 @@ class TapisEntrypoint(pydantic.BaseModel):
                     if tarball := tarballs.get(d):
                         print(f"Copying {tarball} -> {dst}")
                         if not dst.exists():
-                            utils.mkdir_recursive(
-                                dst, mode=utils.DIR_PERMISSIONS
-                            )
+                            utils.mkdir_recursive(dst, mode=utils.DIR_PERMISSIONS)
                         shutil.copyfile(tarball, dst / tarball.name)
                     else:
                         # in case of failures, it's helpful to keep logs around
                         log_dst = utils.FAILURE_LOG_DST / dst.stem
-                        print(
-                            f"Failure detected for {dst}. Copying logs to {log_dst}"
-                        )
+                        print(f"Failure detected for {dst}. Copying logs to {log_dst}")
                         if not log_dst.exists():
-                            utils.mkdir_recursive(
-                                log_dst, mode=utils.DIR_PERMISSIONS
-                            )
+                            utils.mkdir_recursive(log_dst, mode=utils.DIR_PERMISSIONS)
                         for log in src.glob("*log"):
                             shutil.copyfile(log, log_dst / log.name)
                             _copy_tapis_files(log_dst)

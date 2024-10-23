@@ -1,7 +1,5 @@
 import nibabel as nb
 
-import numpy as np
-
 
 def pair_to_img(x: nb.Nifti1Pair) -> nb.Nifti1Image:
     return nb.Nifti1Image(dataobj=x.dataobj, affine=x.affine, header=x.header)

@@ -10,9 +10,7 @@ pain_clusters = {0: pd.NA}
 for p, pain_cluster in enumerate(
     mat["cluster_Fan_Net"]["pain_cluster_names"][0][0], start=1
 ):
-    pain_clusters.update(
-        {p: re.findall(r"[a-zA-Z]+\w*", pain_cluster[0][0])[0]}
-    )
+    pain_clusters.update({p: re.findall(r"[a-zA-Z]+\w*", pain_cluster[0][0])[0]})
 
 full_names = {}
 for n, name in enumerate(mat["cluster_Fan_Net"]["full_names"][0][0]):
@@ -20,9 +18,7 @@ for n, name in enumerate(mat["cluster_Fan_Net"]["full_names"][0][0]):
 
 
 cluster_names = {}
-for n, name in enumerate(
-    mat["cluster_Fan_Net"]["cluster_names"][0][0], start=1
-):
+for n, name in enumerate(mat["cluster_Fan_Net"]["cluster_names"][0][0], start=1):
     cluster_names.update({n: name[0][0]})
 
 

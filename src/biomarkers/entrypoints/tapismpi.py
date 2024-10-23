@@ -40,7 +40,6 @@ def iterate_byrank_serial(
 
 
 class TapisMPIEntrypoint(pydantic.BaseModel):
-
     ins: typing.Sequence[Path]
     outs: typing.Sequence[Path]
     timeout: int | float | None = None
@@ -99,9 +98,7 @@ class TapisMPIEntrypoint(pydantic.BaseModel):
                     if item.is_dir():
                         shutil.rmtree(item)
             except Exception as e:
-                logging.error(
-                    f"Failed to remove unarchived products {src}: {e}"
-                )
+                logging.error(f"Failed to remove unarchived products {src}: {e}")
 
             # serial
             for dst in iterate_byrank_serial(self.outs, self.RANK):
@@ -109,9 +106,7 @@ class TapisMPIEntrypoint(pydantic.BaseModel):
                     if tarball := tarballs.get(self.RANK):
                         logging.info(f"Copying {tarball} -> {dst}")
                         if not dst.exists():
-                            utils.mkdir_recursive(
-                                dst, mode=utils.DIR_PERMISSIONS
-                            )
+                            utils.mkdir_recursive(dst, mode=utils.DIR_PERMISSIONS)
                         shutil.copyfile(tarball, dst / tarball.name)
                     else:
                         # in case of failures, it's helpful to keep logs around
@@ -120,16 +115,12 @@ class TapisMPIEntrypoint(pydantic.BaseModel):
                             f"Failure detected for {self.outs[self.RANK]=}. Copying logs to {log_dst}"
                         )
                         if not log_dst.exists():
-                            utils.mkdir_recursive(
-                                log_dst, mode=utils.DIR_PERMISSIONS
-                            )
+                            utils.mkdir_recursive(log_dst, mode=utils.DIR_PERMISSIONS)
                         for log in src.glob("*log"):
                             shutil.copyfile(log, log_dst / log.name)
                             tapis._copy_tapis_files(log_dst)
                 except Exception as e:
-                    logging.error(
-                        f"Failed to archive {self.outs[self.RANK]=}: {e}"
-                    )
+                    logging.error(f"Failed to archive {self.outs[self.RANK]=}: {e}")
 
     async def run(self):
         with tempfile.TemporaryDirectory() as _tmpd_in:

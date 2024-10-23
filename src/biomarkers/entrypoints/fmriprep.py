@@ -12,7 +12,6 @@ from biomarkers.models import fmriprep as fmriprep_models
 def get_synthstrip_args(
     src: Path, model: Path, mask: Path, n_workers: int | None = None
 ) -> list[str]:
-
     return [
         "synthstrip",
         "-i",
@@ -48,8 +47,8 @@ class FMRIPRepEntrypoint(tapismpi.TapisMPIEntrypoint):
     cifti_output: fmriprep_models.CIFTI_OUTPUT = "91k"
     dummy_scans: int | None = None
     bold2anat_dof: fmriprep_models.BOLD2ANAT_DOF = 6
-    output_spaces: typing.Sequence[fmriprep_models.OUTPUT_SPACE] = (
-        typing.get_args(fmriprep_models.OUTPUT_SPACE)
+    output_spaces: typing.Sequence[fmriprep_models.OUTPUT_SPACE] = typing.get_args(
+        fmriprep_models.OUTPUT_SPACE
     )
     anat_only: typing.Sequence[bool] | None = None
 
@@ -58,9 +57,7 @@ class FMRIPRepEntrypoint(tapismpi.TapisMPIEntrypoint):
             len(list((output_dir_to_check / "fmriprep").glob("*html"))) > 0
         )
 
-    def get_args(
-        self, bidsdir: Path, outdir: Path, work_dir: Path
-    ) -> list[str]:
+    def get_args(self, bidsdir: Path, outdir: Path, work_dir: Path) -> list[str]:
         args = ["fmriprep", "--notrack", "--return-all-components"]
         if self.anat_only and self.anat_only[self.RANK]:
             args.append("--anat-only")
@@ -83,7 +80,6 @@ class FMRIPRepEntrypoint(tapismpi.TapisMPIEntrypoint):
         return args
 
     async def prep(self, tmpd_in: Path, tmpd_out: Path) -> Path | None:
-
         logging.info("Generating brainmask with synthstrip")
         maybe_nii = list(d for d in tmpd_in.rglob("*T1w.nii.gz"))
         if len(maybe_nii) == 0:
@@ -121,7 +117,6 @@ class FMRIPRepEntrypoint(tapismpi.TapisMPIEntrypoint):
                 raise RuntimeError(msg)
 
     async def run_flow(self, tmpd_in: Path, tmpd_out: Path) -> None:
-
         await self.prep(tmpd_in, tmpd_out)
         with tempfile.TemporaryDirectory() as tmpd:
             async with utils.subprocess_manager(

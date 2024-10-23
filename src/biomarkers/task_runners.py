@@ -173,7 +173,7 @@ class DaskTaskRunner(task_runners.BaseTaskRunner):
         """
         Check if an instance has the same settings as this task runner.
         """
-        if type(self) == type(other):
+        if isinstance(self, type(other)):
             return (
                 self.address == other.address
                 and self.cluster_class == other.cluster_class
@@ -212,9 +212,7 @@ class DaskTaskRunner(task_runners.BaseTaskRunner):
                     msg = "No run_count"
                     raise RuntimeError(msg)
                 flow_run = flow_context.flow_run
-                dask_key = (
-                    f"{task_run.name}-{task_run.id.hex}-{flow_run.run_count}"
-                )
+                dask_key = f"{task_run.name}-{task_run.id.hex}-{flow_run.run_count}"
             else:
                 msg = "Should be in flow"
                 raise RuntimeError(msg)
@@ -251,18 +249,14 @@ class DaskTaskRunner(task_runners.BaseTaskRunner):
 
         return visit_collection(expr, visit_fn=visit_fn, return_data=True)
 
-    async def wait(
-        self, key: UUID, timeout: float | None = None
-    ) -> objects.State:
+    async def wait(self, key: UUID, timeout: float | None = None) -> objects.State:
         try:
             future = self._get_dask_future(key)
             result = await future.result(timeout=timeout)
             # future.release()
             return result
         except distributed.TimeoutError:
-            return states.Crashed(
-                message="Wow! This is a totally unknown crash."
-            )
+            return states.Crashed(message="Wow! This is a totally unknown crash.")
         except BaseException as exc:
             return await states.exception_to_crashed_state(exc)
 
@@ -275,9 +269,7 @@ class DaskTaskRunner(task_runners.BaseTaskRunner):
         """
 
         if self._cluster:
-            self.logger.info(
-                f"Connecting to existing Dask cluster {self._cluster}"
-            )
+            self.logger.info(f"Connecting to existing Dask cluster {self._cluster}")
             connect_to = self._cluster
             if self.adapt_kwargs:
                 self._cluster.adapt(**self.adapt_kwargs)
@@ -302,9 +294,7 @@ class DaskTaskRunner(task_runners.BaseTaskRunner):
                     await adapt_response
 
         self._client = await exit_stack.enter_async_context(
-            distributed.Client(
-                connect_to, asynchronous=True, **self.client_kwargs
-            )
+            distributed.Client(connect_to, asynchronous=True, **self.client_kwargs)
         )
 
         if not self._client:

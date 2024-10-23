@@ -6,9 +6,9 @@
 
 # -- Project information -----------------------------------------------------
 
-project = u"biomarkers"
-copyright = u"2022, Patrick Sadil"
-author = u"Patrick Sadil"
+project = "biomarkers"
+copyright = "2022, Patrick Sadil"
+author = "Patrick Sadil"
 
 # -- General configuration ---------------------------------------------------
 

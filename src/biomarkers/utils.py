@@ -40,9 +40,7 @@ def get_mpfc_mask() -> Path:
     Returns:
         Path: Path to mPFC mask.
     """
-    with resources.path(
-        "biomarkers.data", "smallwood_mpfc_MNI152_1p5.nii.gz"
-    ) as f:
+    with resources.path("biomarkers.data", "smallwood_mpfc_MNI152_1p5.nii.gz") as f:
         mpfc = f
     return mpfc
 
@@ -106,9 +104,7 @@ def get_tr(nii: nb.nifti1.Nifti1Image) -> float:
 
 
 def get_nps_mask(
-    weights: (
-        Literal["negative", "positive", "rois", "group", "binary"] | None
-    ) = None,
+    weights: (Literal["negative", "positive", "rois", "group", "binary"] | None) = None,
 ) -> Path:
     match weights:
         case "negative":
@@ -164,9 +160,7 @@ def cache_nii(
 def cache_dataframe(
     f: Callable[P, pd.DataFrame | pl.DataFrame],
 ) -> Callable[Concatenate[Path | None, P], Path]:
-    def wrapper(
-        _filename: Path | None, *args: P.args, **kwargs: P.kwargs
-    ) -> Path:
+    def wrapper(_filename: Path | None, *args: P.args, **kwargs: P.kwargs) -> Path:
         if _filename and _filename.exists():
             print(f"found cached {_filename}")
             outfile = _filename
@@ -321,10 +315,7 @@ async def subprocess_manager(
                 procs.terminate()
 
 
-def recursive_chmod(
-    path: Path, file_mode=FILE_PERMISSIONS, dir_mode=DIR_PERMISSIONS
-):
-
+def recursive_chmod(path: Path, file_mode=FILE_PERMISSIONS, dir_mode=DIR_PERMISSIONS):
     # Apply chmod to the current directory
     path.chmod(dir_mode)
 

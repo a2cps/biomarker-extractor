@@ -10,9 +10,7 @@ from biomarkers import utils
 from biomarkers.entrypoints import tapismpi
 
 
-def get_gift_args(
-    bidsdir: Path, derivative_name: str, config: Path
-) -> list[str]:
+def get_gift_args(bidsdir: Path, derivative_name: str, config: Path) -> list[str]:
     # https://github.com/trendscenter/gift-bids/blob/b176aa119e55a63c557fc3a0d164809fac14e6cb/Dockerfile
     deriv = bidsdir / "derivatives" / "gift" / "derivatives" / derivative_name
     args = [
@@ -40,9 +38,7 @@ def make_1_run_bids(src: Path, dst: Path, bold: Path) -> None:
     utils.mkdir_recursive(func, mode=utils.DIR_PERMISSIONS)
     # dst won't exist yet, so wait until the above mkdir before
     # copying files
-    shutil.copyfile(
-        src / "dataset_description.json", dst / "dataset_description.json"
-    )
+    shutil.copyfile(src / "dataset_description.json", dst / "dataset_description.json")
     shutil.copyfile(bold, func / bold.name)
     anat = dst / f"sub-{sub}" / f"ses-{ses}" / "anat"
     utils.mkdir_recursive(anat, mode=utils.DIR_PERMISSIONS)
@@ -55,9 +51,7 @@ class GIFTEntrypoint(tapismpi.TapisMPIEntrypoint):
     voxel_size: float = 2.4
     smooth_fwhm: float = 6.0
 
-    async def do_single_run_bids(
-        self, in_dir: Path, out_dir: Path, bold: Path
-    ) -> int:
+    async def do_single_run_bids(self, in_dir: Path, out_dir: Path, bold: Path) -> int:
         returncode = 0
         for config_label, config in self.configs.items():
             with tempfile.TemporaryDirectory() as _tmpd:
@@ -73,7 +67,6 @@ class GIFTEntrypoint(tapismpi.TapisMPIEntrypoint):
                         config=config,
                     ),
                 ) as proc:
-
                     await proc.wait()
                     if proc.returncode is None:
                         returncode += 1
@@ -122,17 +115,13 @@ class GIFTEntrypoint(tapismpi.TapisMPIEntrypoint):
                     for vol in range(nii.shape[-1])
                 ]
             )
-            processing.smooth_image(resampled, self.smooth_fwhm).to_filename(
-                bold
-            )
+            processing.smooth_image(resampled, self.smooth_fwhm).to_filename(bold)
 
         # loop involves renaming so must generator to list
         for bold in list(to_prep.rglob("*MNI*")):
             bold.rename(
                 bold.with_name(
-                    bold.name.replace(
-                        "space-MNI152NLin2009cAsym_desc-preproc_", ""
-                    )
+                    bold.name.replace("space-MNI152NLin2009cAsym_desc-preproc_", "")
                 )
             )
         # end up with a few extra files that need deleting

@@ -22,11 +22,7 @@ def _gather_anat(
                 label=label,
                 dtype="f8",
                 path=Path(
-                    str(
-                        layout.get(
-                            label=label, return_type="filename", **filters
-                        )[0]
-                    )
+                    str(layout.get(label=label, return_type="filename", **filters)[0])
                 ),
             )
         )
@@ -36,11 +32,7 @@ def _gather_anat(
                 label=desc,
                 dtype="f8",
                 path=Path(
-                    str(
-                        layout.get(
-                            desc=desc, return_type="filename", **filters
-                        )[0]
-                    )
+                    str(layout.get(desc=desc, return_type="filename", **filters)[0])
                 ),
             )
         )
@@ -61,10 +53,6 @@ def anat_flow(
                 )
 
                 signature.to_parquet3d.submit(
-                    out
-                    / "anat"
-                    / f"sub={sub}"
-                    / f"ses={ses}"
-                    / "part-0.parquet",
+                    out / "anat" / f"sub={sub}" / f"ses={ses}" / "part-0.parquet",
                     fmriprep_func3ds=to_convert,  # type: ignore
                 )

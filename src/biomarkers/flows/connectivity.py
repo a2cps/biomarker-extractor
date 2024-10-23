@@ -7,7 +7,6 @@ import pandas as pd
 import prefect
 from nilearn import maskers
 from nilearn.connectome import ConnectivityMeasure
-from pydantic.dataclasses import dataclass
 from sklearn import covariance
 
 from biomarkers import utils
@@ -19,9 +18,7 @@ from biomarkers.task import utils as task_utils
 def df_to_coordinates(dataframe: pd.DataFrame) -> frozenset[Coordinate]:
     coordinates = set()
     for row in dataframe.itertuples():
-        coordinates.add(
-            Coordinate(label=row.label, seed=(row.x, row.y, row.z))
-        )
+        coordinates.add(Coordinate(label=row.label, seed=(row.x, row.y, row.z)))
 
     return frozenset(coordinates)
 
@@ -41,12 +38,8 @@ def get_baliki_coordinates() -> frozenset[Coordinate]:
 def get_power_coordinates() -> frozenset[Coordinate]:
     from nilearn import datasets
 
-    rois: pd.DataFrame = datasets.fetch_coords_power_2011(
-        legacy_format=False
-    ).rois
-    rois.query(
-        "not roi in [127, 183, 184, 185, 243, 244, 245, 246]", inplace=True
-    )
+    rois: pd.DataFrame = datasets.fetch_coords_power_2011(legacy_format=False).rois
+    rois.query("not roi in [127, 183, 184, 185, 243, 244, 245, 246]", inplace=True)
     rois.rename(columns={"roi": "label"}, inplace=True)
     return df_to_coordinates(rois)
 
@@ -173,9 +166,7 @@ def connectivity_flow(
         layout = ancpbids.BIDSLayout(str(subdir))
         for sub in layout.get_subjects():
             for ses in layout.get_sessions(sub=sub):
-                probseg = _get_probseg(
-                    layout=layout, sub=sub, ses=ses, space=space
-                )
+                probseg = _get_probseg(layout=layout, sub=sub, ses=ses, space=space)
                 for task in layout.get_tasks(sub=sub, ses=ses):
                     for run in layout.get_runs(sub=sub, ses=ses, task=task):
                         i = _get(

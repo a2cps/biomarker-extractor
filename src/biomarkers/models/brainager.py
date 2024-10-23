@@ -10,7 +10,6 @@ class BrainAgeResult(pydantic.BaseModel):
 
     @classmethod
     def from_nii(cls, nii: Path) -> "BrainAgeResult":
-
         return cls(
             volumes=nii.with_name(f"{nii.stem}_tissue_volumes.csv"),
             predictions=nii.with_suffix(".csv"),

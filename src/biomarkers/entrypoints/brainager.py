@@ -23,9 +23,7 @@ def is_oblique(image: Path) -> bool:
         raise AssertionError(msg)
 
     # https://github.com/nipy/nitransforms/blob/0027d1b0ea752d5aa88558678d2b27510366314b/nitransforms/io/afni.py#L213-L229
-    return (
-        affines.obliquity(affine).max() * 180 / math.pi
-    ) > OBLIQUITY_THRESHOLD_DEG
+    return (affines.obliquity(affine).max() * 180 / math.pi) > OBLIQUITY_THRESHOLD_DEG
 
 
 def get_brainager_args(nii: Path) -> list[str]:
@@ -74,7 +72,6 @@ class BrainagerEntrypoint(tapismpi.TapisMPIEntrypoint):
         return proc.returncode
 
     async def prep(self, tmpd_in: Path, tmpd_out: Path) -> Path | None:
-
         logging.info(f"Looking for *T1w.nii.gz in {tmpd_in}")
         maybe_nii = list(d for d in tmpd_in.rglob("*T1w.nii.gz"))
         if len(maybe_nii) == 0:
@@ -102,7 +99,6 @@ class BrainagerEntrypoint(tapismpi.TapisMPIEntrypoint):
         return nii_out
 
     async def run_flow(self, tmpd_in: Path, tmpd_out: Path) -> None:
-
         staged_in = await self.prep(tmpd_in, tmpd_out)
         if staged_in:
             async with utils.subprocess_manager(
