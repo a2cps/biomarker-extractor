@@ -97,7 +97,7 @@ class TapisMPIEntrypoint(pydantic.BaseModel):
                 logging.info(f"Removing unarchived products {src}")
                 for item in src.glob("*"):
                     if item.is_dir():
-                        shutil.rmtree(src)
+                        shutil.rmtree(item)
             except Exception as e:
                 logging.error(
                     f"Failed to remove unarchived products {src}: {e}"
@@ -125,6 +125,7 @@ class TapisMPIEntrypoint(pydantic.BaseModel):
                             )
                         for log in src.glob("*log"):
                             shutil.copyfile(log, log_dst / log.name)
+                            tapis._copy_tapis_files(log_dst)
                 except Exception as e:
                     logging.error(
                         f"Failed to archive {self.outs[self.RANK]=}: {e}"
