@@ -87,7 +87,7 @@ class TapisEntrypoint(pydantic.BaseModel):
                     print(f"Removing unarchived products {src}")
                     for item in src.glob("*"):
                         if item.is_dir():
-                            shutil.rmtree(src)
+                            shutil.rmtree(item)
                 except Exception as e:
                     print(f"Failed to remove unarchived products {src}: {e}")
 
@@ -113,6 +113,7 @@ class TapisEntrypoint(pydantic.BaseModel):
                             )
                         for log in src.glob("*log"):
                             shutil.copyfile(log, log_dst / log.name)
+                            _copy_tapis_files(log_dst)
                 except Exception as e:
                     print(f"Failed to archive {dst=}: {e}")
 
