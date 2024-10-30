@@ -84,8 +84,8 @@ class TapisMPIEntrypoint(pydantic.BaseModel):
                     utils.recursive_chmod(src)
                     with tarfile.open(tarballs[self.RANK], mode="w") as tf:
                         tf.add(src, arcname=".")
-            except Exception as e:
-                logging.error(f"Failed to tar {self.outs[self.RANK]=}: {e}")
+            except Exception:
+                logging.exception(f"Failed to tar {self.outs[self.RANK]=}")
 
             # src (underneath /tmp) will automatically be deleted after the final copy but
             # archiving with tar creates a duplicate of all products, which could
@@ -97,8 +97,8 @@ class TapisMPIEntrypoint(pydantic.BaseModel):
                 for item in src.glob("*"):
                     if item.is_dir():
                         shutil.rmtree(item)
-            except Exception as e:
-                logging.error(f"Failed to remove unarchived products {src}: {e}")
+            except Exception:
+                logging.exception(f"Failed to remove unarchived products {src}")
 
             # serial
             for dst in iterate_byrank_serial(self.outs, self.RANK):
@@ -119,8 +119,8 @@ class TapisMPIEntrypoint(pydantic.BaseModel):
                         for log in src.glob("*log"):
                             shutil.copyfile(log, log_dst / log.name)
                             tapis._copy_tapis_files(log_dst)
-                except Exception as e:
-                    logging.error(f"Failed to archive {self.outs[self.RANK]=}: {e}")
+                except Exception:
+                    logging.exception(f"Failed to archive {self.outs[self.RANK]=}")
 
     async def run(self):
         with tempfile.TemporaryDirectory() as _tmpd_in:
@@ -134,8 +134,8 @@ class TapisMPIEntrypoint(pydantic.BaseModel):
                     await asyncio.wait_for(
                         self.run_flow(tmpd_in, tmpd_out), timeout=self.timeout
                     )
-                except Exception as e:
-                    logging.error(e)
+                except Exception:
+                    logging.exception("Flow failed")
                 finally:
                     self.archive(tmpd_out)
 
@@ -155,5 +155,5 @@ class TapisMPIEntrypoint(pydantic.BaseModel):
                 for log_dst in utils.FAILURE_LOG_DST.glob(f"*{outdir.stem}"):
                     if log_dst.is_dir():
                         tapis._copy_tapis_files(log_dst)
-            except Exception as e:
-                logging.error(f"Failed to handle job out,err: {e}")
+            except Exception:
+                logging.exception("Failed to handle job out,err")

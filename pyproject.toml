@@ -3,7 +3,10 @@ name = "biomarkers"
 version = "0.1.0"
 readme = "README.md"
 requires-python = ">=3.11"
-dependencies = ["nibabel"]
+dependencies = [
+    "mpi4py>=4.0.1",
+    "nibabel",
+]
 # note some dependencies only available through conda (see env.yml)
 # downloaded from channel https://fsl.fmrib.ox.ac.uk/fsldownloads/fslconda/public
 #   - bc <--- FSL sripts seem to depend on this

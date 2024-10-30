@@ -156,3 +156,5 @@ cython_debug/
 # for now, until the tests are developed
 tests/data
 .devcontainer
+.conda
+.ruff_cache
