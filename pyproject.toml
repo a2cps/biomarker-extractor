@@ -2,7 +2,7 @@
 name = "biomarkers"
 version = "0.1.0"
 readme = "README.md"
-requires-python = ">=3.11"
+requires-python = ">=3.10"
 dependencies = [
     "mpi4py>=3.1.6",
     "nibabel",
