@@ -4,7 +4,7 @@ version = "0.1.0"
 readme = "README.md"
 requires-python = ">=3.11"
 dependencies = [
-    "mpi4py>=4.0.1",
+    "mpi4py>=3.1.6",
     "nibabel",
 ]
 # note some dependencies only available through conda (see env.yml)
