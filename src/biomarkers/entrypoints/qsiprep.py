@@ -99,7 +99,8 @@ class QSIPRepEntrypoint(tapismpi.TapisMPIEntrypoint):
         for key, value in to_extend.items():
             extend_arg(args, key, value)
 
-        args.extend([str(bidsdir), str(outdir / "qsiprep"), "participant"])
+        # qsiprep always stores outputs in subfolder of outdir called "qsiprep"
+        args.extend([str(bidsdir), str(outdir), "participant"])
 
         return args
 
