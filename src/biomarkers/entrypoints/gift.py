@@ -11,28 +11,10 @@ from biomarkers import utils
 from biomarkers.entrypoints import tapismpi
 
 
-def get_gift_args(bidsdir: Path, derivative_name: str, config: Path) -> list[str]:
-    # https://github.com/trendscenter/gift-bids/blob/b176aa119e55a63c557fc3a0d164809fac14e6cb/Dockerfile
-    deriv = bidsdir / "derivatives" / "gift" / "derivatives" / derivative_name
-    args = [
-        "/app/run.sh",
-        str(bidsdir),
-        str(deriv),
-        "participant",
-        "--skip-bids-validator",
-        "--config",
-        str(config),
-    ]
-    utils.mkdir_recursive(deriv, mode=utils.DIR_PERMISSIONS)
-    return args
-
-
-# need to force gift to run one just one run at a time (no collapsing)
-# this means that we need temporary folders with just a single
-# func scan
-
-
 def make_1_run_bids(src: Path, dst: Path, bold: Path) -> None:
+    # need to force gift to run one just one run at a time (no collapsing)
+    # this means that we need temporary folders with just a single
+    # func scan
     sub = utils.get_sub(bold)
     ses = utils.get_ses(bold)
     func = dst / f"sub-{sub}" / f"ses-{ses}" / "func"
@@ -52,6 +34,9 @@ class GIFTEntrypoint(tapismpi.TapisMPIEntrypoint):
     voxel_size: float = 2.0
     smooth_fwhm: float = 6.0
 
+    def check_outputs(self, output_dir_to_check: Path) -> bool:
+        return (output_dir_to_check / "gift").exists()
+
     async def do_single_run_bids(self, in_dir: Path, out_dir: Path, bold: Path) -> None:
         gift_dir = out_dir / "gift"
         for config_label, config in self.configs.items():
@@ -62,7 +47,7 @@ class GIFTEntrypoint(tapismpi.TapisMPIEntrypoint):
                 async with utils.subprocess_manager(
                     log=out_dir
                     / f"gift_rank-{self.RANK}_{utils.img_stem(bold)}_{config_label}.log",
-                    args=get_gift_args(
+                    args=self.get_args(
                         bidsdir=tmpd,
                         derivative_name=f"{utils.img_stem(bold)}_{config_label}",
                         config=config,
@@ -121,17 +106,23 @@ class GIFTEntrypoint(tapismpi.TapisMPIEntrypoint):
             logging.info(f"smoothing {bold}")
             processing.smooth_image(resampled, self.smooth_fwhm).to_filename(bold)
 
+        # GIFT fails to recognize space-* files as relevant, so need to simplify names
         # loop involves renaming so must generator to list
         for bold in list(to_prep.rglob("*MNI*")):
-            bold.rename(
-                bold.with_name(
-                    bold.name.replace("space-MNI152NLin2009cAsym_desc-preproc_", "")
+            if "res" in bold.name:
+                bold.rename(
+                    bold.with_name(
+                        bold.name.replace(
+                            "space-MNI152NLin2009cAsym_res-2_desc-preproc_", ""
+                        )
+                    )
                 )
-            )
-        # end up with a few extra files that need deleting
-        for bold in list(to_prep.rglob("*")):
-            if "desc-" in bold.name:
-                bold.unlink()
+            else:
+                bold.rename(
+                    bold.with_name(
+                        bold.name.replace("space-MNI152NLin2009cAsym_desc-preproc_", "")
+                    )
+                )
 
     def tidy(self, out_dir: Path) -> None:
         # unlinking files after gzip, so convert to list
@@ -149,3 +140,19 @@ class GIFTEntrypoint(tapismpi.TapisMPIEntrypoint):
 
         logging.info(f"compressing niis in {out_dir}")
         self.tidy(out_dir=out_dir)
+
+    @staticmethod
+    def get_args(bidsdir: Path, derivative_name: str, config: Path) -> list[str]:
+        # https://github.com/trendscenter/gift-bids/blob/b176aa119e55a63c557fc3a0d164809fac14e6cb/Dockerfile
+        deriv = bidsdir / "derivatives" / "gift" / "derivatives" / derivative_name
+        args = [
+            "/app/run.sh",
+            str(bidsdir),
+            str(deriv),
+            "participant",
+            "--skip-bids-validator",
+            "--config",
+            str(config),
+        ]
+        utils.mkdir_recursive(deriv, mode=utils.DIR_PERMISSIONS)
+        return args
