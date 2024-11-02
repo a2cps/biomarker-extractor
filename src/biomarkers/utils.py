@@ -1,5 +1,6 @@
 import asyncio
 import contextlib
+import gzip
 import logging
 import os
 import re
@@ -326,3 +327,10 @@ def recursive_chmod(path: Path, file_mode=FILE_PERMISSIONS, dir_mode=DIR_PERMISS
 
         for file_name in files:
             (Path(root) / file_name).chmod(file_mode)
+
+
+def gzip_file(src: Path, dst: Path):
+    with open(src, "rb") as s:
+        with gzip.open(dst, "wb") as d:
+            for chunk in iter(lambda: s.read(4096), b""):
+                d.write(chunk)

@@ -4,6 +4,7 @@ import tempfile
 from pathlib import Path
 
 import nibabel as nb
+import numpy as np
 from nibabel import processing
 
 from biomarkers import utils
@@ -48,11 +49,11 @@ def make_1_run_bids(src: Path, dst: Path, bold: Path) -> None:
 
 class GIFTEntrypoint(tapismpi.TapisMPIEntrypoint):
     configs: dict[str, Path]
-    voxel_size: float = 2.4
+    voxel_size: float = 2.0
     smooth_fwhm: float = 6.0
 
-    async def do_single_run_bids(self, in_dir: Path, out_dir: Path, bold: Path) -> int:
-        returncode = 0
+    async def do_single_run_bids(self, in_dir: Path, out_dir: Path, bold: Path) -> None:
+        gift_dir = out_dir / "gift"
         for config_label, config in self.configs.items():
             with tempfile.TemporaryDirectory() as _tmpd:
                 tmpd = Path(_tmpd)
@@ -68,14 +69,14 @@ class GIFTEntrypoint(tapismpi.TapisMPIEntrypoint):
                     ),
                 ) as proc:
                     await proc.wait()
-                    if proc.returncode is None:
-                        returncode += 1
-                        break
-                    elif proc.returncode > 0:
-                        returncode += proc.returncode
-                        break
+                    if proc.returncode is None or proc.returncode > 0:
+                        # remove folder so that archiving detects that there was a failure
+                        # and sends logs to failure_dst_dir
+                        if gift_dir.exists():
+                            shutil.rmtree(gift_dir)
+                        msg = f"gift failed with {proc.returncode=}"
+                        raise RuntimeError(msg)
 
-                gift_dir = out_dir / "gift"
                 shutil.copytree(
                     tmpd,
                     gift_dir,
@@ -101,20 +102,23 @@ class GIFTEntrypoint(tapismpi.TapisMPIEntrypoint):
                 else:
                     src.rename(dst)
 
-        return returncode
-
     def prep(self, to_prep: Path):
         for bold in to_prep.rglob("*MNI*bold.nii.gz"):
             nii = nb.nifti1.load(bold)
-            logging.info(f"resampling {bold}")
-            resampled = nb.funcs.concat_images(
-                [
-                    processing.resample_to_output(
-                        nii.slicer[:, :, :, vol], voxel_sizes=self.voxel_size
-                    )
-                    for vol in range(nii.shape[-1])
-                ]
-            )
+            if not all(np.isclose(nii.header.get_zooms()[:3], self.voxel_size)):
+                logging.info(f"resampling {bold}")
+                resampled = nb.funcs.concat_images(
+                    [
+                        processing.resample_to_output(
+                            nii.slicer[:, :, :, vol], voxel_sizes=self.voxel_size
+                        )
+                        for vol in range(nii.shape[-1])
+                    ]
+                )
+            else:
+                logging.info(f"no need for resampling {bold}")
+                resampled = nii
+            logging.info(f"smoothing {bold}")
             processing.smooth_image(resampled, self.smooth_fwhm).to_filename(bold)
 
         # loop involves renaming so must generator to list
@@ -129,13 +133,19 @@ class GIFTEntrypoint(tapismpi.TapisMPIEntrypoint):
             if "desc-" in bold.name:
                 bold.unlink()
 
-    async def run_flow(self, in_dir: Path, out_dir: Path) -> int:
-        returncode = 0
+    def tidy(self, out_dir: Path) -> None:
+        # unlinking files after gzip, so convert to list
+        # before iterating over
+        for nii in list(out_dir.rglob("*nii")):
+            utils.gzip_file(nii, nii.with_suffix(".gz"))
+            nii.unlink()
+
+    async def run_flow(self, in_dir: Path, out_dir: Path) -> None:
         self.prep(in_dir)
         for bold in in_dir.rglob("*bold.nii.gz"):
             logging.info(f"running gift on {bold}")
-            returncode += await self.do_single_run_bids(
-                in_dir=in_dir, out_dir=out_dir, bold=bold
-            )
+            await self.do_single_run_bids(in_dir=in_dir, out_dir=out_dir, bold=bold)
             logging.info(f"{bold} done")
-        return returncode
+
+        logging.info(f"compressing niis in {out_dir}")
+        self.tidy(out_dir=out_dir)
