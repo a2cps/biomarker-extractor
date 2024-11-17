@@ -4,8 +4,14 @@ version = "0.1.0"
 readme = "README.md"
 requires-python = ">=3.10"
 dependencies = [
+    "ancpbids==0.2.1",
     "mpi4py>=3.1.6",
-    "nibabel",
+    "nibabel>=5.3.2",
+    "nilearn>=0.10.4",
+    "polars>=1.13.1",
+    "pydantic>=2.9.2",
+    "scikit-image>=0.24.0",
+    "scikit-learn>=1.5.2",
 ]
 # note some dependencies only available through conda (see env.yml)
 # downloaded from channel https://fsl.fmrib.ox.ac.uk/fsldownloads/fslconda/public
@@ -33,7 +39,11 @@ mypy_path = ".typings"
 [tool.uv]
 dev-dependencies = [
     "pre-commit>=4.0.1",
+    "pytest>=8.3.3",
 ]
 
 [tool.ruff]
 exclude = ["tools", "src/biomarkers/flows/connectivity.py"]
+
+[tool.hatch.envs.default]
+installer = "uv"

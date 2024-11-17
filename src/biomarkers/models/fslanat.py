@@ -1,6 +1,5 @@
-from __future__ import annotations
-
 import re
+import typing
 from pathlib import Path
 from typing import Iterable, Literal
 
@@ -19,11 +18,7 @@ class FIRSTROI:
     vtk: pydantic.FilePath
 
     @classmethod
-    def from_nameroot(
-        cls,
-        name: str,
-        root: pydantic.DirectoryPath,
-    ) -> FIRSTROI:
+    def from_nameroot(cls, name: str, root: pydantic.DirectoryPath) -> typing.Self:
         return cls(
             name=name,
             root=root,
@@ -99,7 +94,7 @@ class FIRSTResults:
     )
 
     @classmethod
-    def from_root(cls, root: pydantic.DirectoryPath) -> FIRSTResults:
+    def from_root(cls, root: pydantic.DirectoryPath) -> typing.Self:
         return cls(
             root=root,
             BrStem=FIRSTROI.from_nameroot("BrStem", root=root),
@@ -164,7 +159,7 @@ class FSLAnatResult:
     T12std_skullcon: pydantic.FilePath
 
     @classmethod
-    def from_root(cls, root: pydantic.DirectoryPath) -> FSLAnatResult:
+    def from_root(cls, root: pydantic.DirectoryPath) -> typing.Self:
         return cls(
             root=root,
             first_results=FIRSTResults.from_root(root / "first_results"),
@@ -228,7 +223,7 @@ class FSLAnatResult:
     ) -> pd.DataFrame:
         """Write the volumes to a csv."""
         nii = np.asanyarray(
-            nb.loadsave.load(self.first_results.T1_first_all_fast_firstseg).get_fdata(),
+            nb.nifti1.load(self.first_results.T1_first_all_fast_firstseg).get_fdata(),
             dtype=np.uint8,
         )
         vol_dict = {}

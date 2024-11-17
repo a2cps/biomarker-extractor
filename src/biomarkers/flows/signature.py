@@ -1,196 +1,151 @@
 from pathlib import Path
 
-import nibabel as nb
-
-import prefect
-
 import ancpbids
-
-from nilearn import _utils
-from nilearn import masking
-import numpy as np
 import polars as pl
 
-from nibabel import processing
-
-import pydantic
-from pydantic.dataclasses import dataclass
-
-from biomarkers import utils
-
-from biomarkers.task import utils as task_utils
-from biomarkers.task import imgs
+from biomarkers import datasets, imgs, utils
+from biomarkers.models import signatures
 
 
-@dataclass(frozen=True)
-class Func3d:
-    label: str
-    path: pydantic.FilePath
-    dtype: str
-
-
-def _make_mask(img) -> nb.Nifti1Image:
-    return nb.Nifti1Image(
-        dataobj=np.ones(img.shape[:3], dtype=np.uint8), affine=img.affine
+def cosine_similarity(col1: str, col2: str) -> pl.Expr:
+    return pl.col(col1).dot(pl.col(col2)) / (
+        pl.col(col1).pow(2).sum().sqrt() * pl.col(col2).pow(2).sum().sqrt()
     )
 
 
-def _to_df3d(img, label: str, dtype="f4") -> pl.DataFrame:
-    i = _utils.check_niimg(img)
-    out = masking.apply_mask(
-        i,
-        _make_mask(i),
-        dtype=dtype,
-    )
-    return pl.DataFrame({"voxel": np.arange(out.shape[0], dtype=np.uint32), label: out})
-
-
-@prefect.task()
-@utils.cache_dataframe
-def to_df4d(img: Path, dtype: str = "f4") -> pl.DataFrame:
-    i = _utils.check_niimg(img)
-    out = masking.apply_mask(
-        i,
-        _make_mask(i),
-        dtype=dtype,
-    )
-    d = (
-        pl.DataFrame(out, schema=[str(x) for x in range(out.shape[1])])
-        .with_columns(
-            pl.Series(
-                "t",
-                (np.arange(out.shape[0]) * 800).astype(np.uint32),
-            )
-        )
-        .melt(id_vars=["t"], value_name="signal", variable_name="voxel")
-        .with_columns(pl.col("voxel").cast(pl.UInt32()))
-    )
-
-    return d
-
-
-@prefect.task()
-@utils.cache_dataframe
-def to_parquet3d(
-    fmriprep_func3ds: list[Func3d], func3ds: list[Func3d] | None = None
-) -> pl.DataFrame:
-    assert len(fmriprep_func3ds)
-
-    d = _to_df3d(
-        fmriprep_func3ds[0].path,
-        label=fmriprep_func3ds[0].label,
-        dtype=fmriprep_func3ds[0].dtype,
-    )
-    for func3d in fmriprep_func3ds[1:]:
-        d = d.join(
-            _to_df3d(
-                func3d.path,
-                label=func3d.label,
-                dtype=func3d.dtype,
-            ),
-            on="voxel",
-        )
-    target = nb.load(fmriprep_func3ds[0].path)
-    if func3ds:
-        for func3d in func3ds:
-            img: nb.Nifti1Image = nb.load(func3d.path)
-            d = d.join(
-                _to_df3d(
-                    processing.resample_from_to(img, target, order=1),
-                    label=func3d.label,
-                    dtype=func3d.dtype,
-                ),
-                on="voxel",
-            )
-    return d
-
-
-@prefect.task()
-def _gather_to_resample(
-    extra: list[Func3d],
+def gather_to_resample(
+    extra: list[signatures.Func3d],
     layout: ancpbids.BIDSLayout,
     sub: str,
     ses: str,
     space: str = "MNI152NLin2009cAsym",
-) -> list[Func3d]:
+) -> list[signatures.Func3d]:
     filters = {"sub": sub, "ses": ses, "space": space}
     GM = layout.get(label="GM", return_type="filename", **filters)[0]
     WM = layout.get(label="WM", return_type="filename", **filters)[0]
     CSF = layout.get(label="CSF", return_type="filename", **filters)[0]
     return [
-        Func3d(
-            label="GM",
-            dtype="f4",
-            path=Path(str(GM)),
-        ),
-        Func3d(
-            label="CSF",
-            dtype="f4",
-            path=Path(str(CSF)),
-        ),
-        Func3d(
-            label="WM",
-            dtype="f4",
-            path=Path(str(WM)),
-        ),
+        signatures.Func3d(label="GM", dtype="f8", path=Path(str(GM))),
+        signatures.Func3d(label="CSF", dtype="f8", path=Path(str(CSF))),
+        signatures.Func3d(label="WM", dtype="f8", path=Path(str(WM))),
     ] + extra
 
 
-@prefect.task()
-def _get_in_space(
+def get_in_space(
     layout: ancpbids.BIDSLayout,
     sub: str,
     ses: str,
     task: str,
     run: str,
     space: str = "MNI152NLin2009cAsym",
-) -> list[Func3d]:
+) -> list[signatures.Func3d]:
     filters = {"sub": sub, "ses": ses, "space": space, "task": task, "run": run}
     mask = layout.get(desc="brain", return_type="filename", **filters)[0]
     aparcaseg = layout.get(desc="aparcaseg", return_type="filename", **filters)[0]
-    aseg = layout.get(
-        desc="aseg",
-        return_type="filename",
-        **filters,
-    )[0]
+    aseg = layout.get(desc="aseg", return_type="filename", **filters)[0]
     return [
-        Func3d(
-            label="brain",
-            dtype="?",
-            path=Path(str(mask)),
-        ),
-        Func3d(
-            label="aparcaseg",
-            dtype="uint16",
-            path=Path(str(aparcaseg)),
-        ),
-        Func3d(
-            label="aseg",
-            dtype="uint8",
-            path=Path(str(aseg)),
-        ),
+        signatures.Func3d(label="brain", dtype="?", path=Path(str(mask))),
+        signatures.Func3d(label="aparcaseg", dtype="uint16", path=Path(str(aparcaseg))),
+        signatures.Func3d(label="aseg", dtype="uint8", path=Path(str(aseg))),
     ]
 
 
-@prefect.task()
-def _get(
-    layout: ancpbids.BIDSLayout,
-    filters: dict[str, str],
-) -> Path:
-    file = layout.get(
-        return_type="filename",
-        **filters,
-    )
+def get(layout: ancpbids.BIDSLayout, filters: dict[str, str]) -> Path:
+    file = layout.get(return_type="filename", **filters)
     if not len(file) == 1:
-        raise ValueError(
+        msg = (
             f"Expected that only 1 file would be retreived but saw {file=}; {filters=}"
         )
+        raise ValueError(msg)
     return Path(str(file[0]))
 
 
-@prefect.flow()
+def get_all_signatures() -> list[signatures.Func3d]:
+    return [
+        signatures.Func3d(path=datasets.get_nps(x), label=x, dtype="f8")
+        for x in signatures.NPS
+    ] + [
+        signatures.Func3d(path=datasets.get_siips1(x), label=x, dtype="f8")
+        for x in signatures.SIIPS
+    ]
+
+
+@utils.cache_dataframe
+def sign_by_t(bold: pl.DataFrame, labels: Path, signatures: list[str]) -> pl.DataFrame:
+    # for memory reasons, iterate and aggregate
+    la = (
+        pl.scan_parquet(labels)
+        .filter(pl.col("brain"))
+        .select(["voxel", *signatures])
+        .collect()
+    )
+    out = []
+    for _, bo in bold.group_by("t"):
+        out.append(
+            bo.join(la, on="voxel", how="inner", validate="m:1")
+            .unpivot(index=["voxel", "t", "signal"], variable_name="signature")
+            .group_by("t", "signature")
+            .agg(
+                correlation=pl.corr(pl.col("value"), pl.col("signal")),
+                dot=pl.col("signal").dot(pl.col("value")),
+                cosine=cosine_similarity("signal", "value"),
+            )
+        )
+
+    return pl.concat(out)
+
+
+@utils.cache_dataframe
+def sign_by_run(
+    bold: pl.DataFrame, labels: Path, signatures: list[str]
+) -> pl.DataFrame:
+    bo = bold.group_by("voxel").agg(signal=pl.col("signal").mean()).lazy()
+    la = pl.scan_parquet(labels).filter(pl.col("brain")).select(["voxel", *signatures])
+    return (
+        bo.join(la, on="voxel", how="inner")
+        .unpivot(index=["voxel", "signal"], variable_name="signature")
+        .group_by("signature")
+        .agg(
+            correlation=pl.corr(pl.col("value"), pl.col("signal")),
+            dot=pl.col("signal").dot(pl.col("value")),
+            cosine=cosine_similarity("signal", "value"),
+        )
+        .collect()
+    )
+
+
+@utils.cache_dataframe
+def sign_by_part(
+    bold: pl.DataFrame,
+    labels: Path,
+    signatures: list[str],
+    bins: tuple[float, ...] = (138.0, 300.0),
+    bin_labels: tuple[str, ...] = ("beginning", "middle", "end"),
+) -> pl.DataFrame:
+    bo = (
+        bold.with_columns(
+            pl.col("t").cut(breaks=list(bins), labels=list(bin_labels)).alias("part")
+        )
+        .group_by("voxel", "part")
+        .agg(signal=pl.col("signal").mean())
+        .lazy()
+    )
+    la = pl.scan_parquet(labels).filter(pl.col("brain")).select(["voxel", *signatures])
+    return (
+        bo.join(la, on="voxel", how="inner", validate="m:m")
+        .unpivot(index=["voxel", "part", "signal"], variable_name="signature")
+        .group_by("signature", "part")
+        .agg(
+            correlation=pl.corr(pl.col("value"), pl.col("signal")),
+            dot=pl.col("signal").dot(pl.col("value")),
+            cosine=cosine_similarity("signal", "value"),
+        )
+        .collect()
+    )
+
+
 def signature_flow(
-    subdirs: frozenset[Path],
+    subdir: Path,
     out: Path,
     high_pass: float | None = None,
     low_pass: float | None = 0.1,
@@ -200,118 +155,135 @@ def signature_flow(
     winsorize: bool = True,
     space: str = "MNI152NLin2009cAsym",
 ) -> None:
-    for subdir in subdirs:
-        layout = ancpbids.BIDSLayout(str(subdir))
-        for sub in layout.get_subjects():
-            for ses in layout.get_sessions(sub=sub):
-                func3ds = _gather_to_resample.submit(
-                    extra=[
-                        Func3d(
-                            path=utils.get_nps_mask("group"),
-                            label="NPS",
-                            dtype="f4",
-                        ),
-                        Func3d(
-                            path=utils.get_nps_mask("negative"),
-                            label="NPSneg",
-                            dtype="f4",
-                        ),
-                        Func3d(
-                            path=utils.get_nps_mask("positive"),
-                            label="NPSpos",
-                            dtype="f4",
-                        ),
-                    ],
-                    layout=layout,
-                    sub=str(sub),
-                    ses=str(ses),
-                    space=space,
-                )
+    signatures = get_all_signatures()
 
-                for task in layout.get_tasks(sub=sub, ses=ses):
-                    for run in layout.get_runs(sub=sub, ses=ses, task=task):
-                        confounds = task_utils.update_confounds.submit(
-                            out
-                            / "confounds-func"
-                            / f"sub={sub}"
-                            / f"ses={ses}"
-                            / f"task={task}"
-                            / f"run={run}"
-                            / "part-0.parquet",
-                            confounds=_get(
-                                layout=layout,
-                                filters={
-                                    "sub": str(sub),
-                                    "ses": str(ses),
-                                    "task": str(task),
-                                    "run": str(run),
-                                    "desc": "confounds",
-                                },
-                            ),
-                            n_non_steady_state_tr=n_non_steady_state_tr,
-                        )
-                        preproc = _get(
+    layout = ancpbids.BIDSLayout(str(subdir))
+    for sub in layout.get_subjects():
+        for ses in layout.get_sessions(sub=sub):
+            func3ds = gather_to_resample(
+                extra=signatures, layout=layout, sub=str(sub), ses=str(ses), space=space
+            )
+
+            for task in layout.get_tasks(sub=sub, ses=ses):
+                for run in layout.get_runs(sub=sub, ses=ses, task=task):
+                    confounds = utils.update_confounds(
+                        out
+                        / "signature-confounds"
+                        / f"sub={sub}"
+                        / f"ses={ses}"
+                        / f"task={task}"
+                        / f"run={run}"
+                        / "part-0.parquet",
+                        confounds=get(
                             layout=layout,
                             filters={
                                 "sub": str(sub),
                                 "ses": str(ses),
                                 "task": str(task),
                                 "run": str(run),
-                                "space": space,
-                                "desc": "preproc",
+                                "desc": "confounds",
+                                "extension": ".tsv",
                             },
-                        )
+                        ),
+                        n_non_steady_state_tr=n_non_steady_state_tr,
+                    )
+                    preproc = get(
+                        layout=layout,
+                        filters={
+                            "sub": str(sub),
+                            "ses": str(ses),
+                            "task": str(task),
+                            "run": str(run),
+                            "space": space,
+                            "desc": "preproc",
+                            "suffix": "bold",
+                            "extension": ".nii.gz",
+                        },
+                    )
+                    mask = get(
+                        layout=layout,
+                        filters={
+                            "sub": str(sub),
+                            "ses": str(ses),
+                            "task": str(task),
+                            "run": str(run),
+                            "space": space,
+                            "desc": "brain",
+                            "suffix": "mask",
+                            "extension": ".nii.gz",
+                        },
+                    )
 
-                        i = imgs.clean_img.submit(
-                            out / "cleaned-func" / preproc.name,
-                            img=preproc,  # type: ignore
-                            mask=_get(
-                                layout=layout,
-                                filters={
-                                    "sub": str(sub),
-                                    "ses": str(ses),
-                                    "task": str(task),
-                                    "run": str(run),
-                                    "desc": "brain",
-                                },
-                            ),
-                            confounds_file=confounds,  # type: ignore
-                            high_pass=high_pass,
-                            low_pass=low_pass,
-                            detrend=detrend,
-                            fwhm=fwhm,
-                            winsorize=winsorize,
-                            to_percentchange=False,
-                            n_non_steady_state_tr=n_non_steady_state_tr,
-                        )
-                        to_df4d.submit(
-                            out
-                            / "cleaned-ds"
-                            / f"sub={sub}"
-                            / f"ses={ses}"
-                            / f"task={task}"
-                            / f"run={run}"
-                            / "part-0.parquet",
-                            img=i,  # type: ignore
-                            dtype="f4",
-                        )
+                    cleaned = imgs.clean_img(
+                        out
+                        / "signature-cleaned"
+                        / f"sub-{sub}_ses-{ses}_task-{task}_run-{run}_desc-preproc_bold.nii.gz",
+                        img=preproc,
+                        mask=mask,
+                        confounds_file=confounds,
+                        high_pass=high_pass,
+                        low_pass=low_pass,
+                        do_detrend=detrend,
+                        fwhm=fwhm,
+                        do_winsorize=winsorize,
+                        to_percentchange=False,
+                        n_non_steady_state_tr=n_non_steady_state_tr,
+                    )
+                    bold = utils.to_df4d(img=cleaned)
 
-                        fmriprep_func3ds = _get_in_space.submit(
-                            layout=layout,
-                            sub=str(sub),
-                            ses=str(ses),
-                            task=str(task),
-                            run=str(run),
-                            space=space,
-                        )
-                        to_parquet3d.submit(
-                            out
-                            / "cleaned-ds3d"
-                            / f"sub={sub}"
-                            / f"ses={ses}"
-                            / f"task={task}"
-                            / f"run={run}"
-                            / "part-0.parquet",
-                            func3ds=func3ds,  # type: ignore
-                            fmriprep_func3ds=fmriprep_func3ds,  # type: ignore
-                        )
+                    fmriprep_func3ds = get_in_space(
+                        layout=layout,
+                        sub=str(sub),
+                        ses=str(ses),
+                        task=str(task),
+                        run=str(run),
+                        space=space,
+                    )
+                    labels = utils.to_parquet3d(
+                        out
+                        / "signature-labels"
+                        / f"sub={sub}"
+                        / f"ses={ses}"
+                        / f"task={task}"
+                        / f"run={run}"
+                        / "part-0.parquet",
+                        func3ds=func3ds,
+                        fmriprep_func3ds=fmriprep_func3ds,
+                    )
+
+                    sign_by_run(
+                        out
+                        / "signature-by-run"
+                        / f"sub={sub}"
+                        / f"ses={ses}"
+                        / f"task={task}"
+                        / f"run={run}"
+                        / "part-0.parquet",
+                        bold=bold,
+                        labels=labels,
+                        signatures=[x.label for x in signatures],
+                    )
+                    sign_by_part(
+                        out
+                        / "signature-by-part"
+                        / f"sub={sub}"
+                        / f"ses={ses}"
+                        / f"task={task}"
+                        / f"run={run}"
+                        / "part-0.parquet",
+                        bold=bold,
+                        labels=labels,
+                        signatures=[x.label for x in signatures],
+                    )
+                    sign_by_t(
+                        out
+                        / "signature-by-tr"
+                        / f"sub={sub}"
+                        / f"ses={ses}"
+                        / f"task={task}"
+                        / f"run={run}"
+                        / "part-0.parquet",
+                        bold=bold,
+                        labels=labels,
+                        signatures=[x.label for x in signatures],
+                    )

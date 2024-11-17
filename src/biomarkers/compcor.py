@@ -1,16 +1,17 @@
-from typing import Iterable
 from pathlib import Path
+from typing import Iterable
+
+import nibabel as nb
 import numpy as np
 
 # from numpy.polynomial import Legendre
 import pandas as pd
-
-import nibabel as nb
 from nibabel import processing
+from nilearn import masking, signal
+from scipy import ndimage
+from skimage import morphology
 
-import prefect
-
-from .. import utils
+from biomarkers import utils
 
 # TODO:
 # - detrend (https://numpy.org/doc/stable/reference/generated/numpy.polynomial.legendre.Legendre.fit.html#numpy.polynomial.legendre.Legendre.fit)
@@ -100,17 +101,14 @@ def comp_cor(X: np.ndarray) -> pd.DataFrame:
 
 def get_components(
     img: Path,
-    mask: nb.Nifti1Image,
+    mask: nb.nifti1.Nifti1Image,
     high_pass: float | None = None,
     low_pass: float | None = None,
     n_non_steady_state_tr: int = 0,
     detrend: bool = False,
 ) -> pd.DataFrame:
-    from nilearn import signal
-    from nilearn.masking import apply_mask
-
-    X: np.ndarray = apply_mask(imgs=img, mask_img=mask)
-    tr = utils.get_tr(nb.load(img))
+    X: np.ndarray = masking.apply_mask(imgs=img, mask_img=mask)
+    tr = utils.get_tr(nb.nifti1.Nifti1Image.load(img))
     X_cleaned = signal.clean(
         X,
         detrend=detrend,
@@ -129,41 +127,37 @@ def get_components(
 
 
 def get_acompcor_mask(
-    target: Path,
-    gray_matter: Path,
-    mask_matters: list[Path],
-) -> nb.Nifti1Image:
-    from skimage.morphology import ball
-    from scipy import ndimage
-
+    target: Path, gray_matter: Path, mask_matters: list[Path]
+) -> nb.nifti1.Nifti1Image:
     # PV maps from FAST
-    gm_nii = nb.load(gray_matter)
+    gm_nii = nb.nifti1.Nifti1Image.load(gray_matter)
 
     mask_data = np.zeros(gm_nii.shape, dtype=np.bool_)
     for mask in mask_matters:
-        mask_data |= np.asarray(nb.load(mask).dataobj, dtype=np.bool_)
+        mask_data |= np.asarray(
+            nb.nifti1.Nifti1Image.load(mask).dataobj, dtype=np.bool_
+        )
         if "CSF" not in mask.stem:
             # Dilate the GM mask
             gm_dilated = ndimage.binary_dilation(
-                gm_nii.get_fdata() > 0.05, structure=ball(3)
+                gm_nii.get_fdata() > 0.05, structure=morphology.ball(3)
             )
             # subtract dilated gm from mask to make sure voxel does not contain GM
             mask_data[gm_dilated] = 0
 
     # Resample probseg maps to BOLD resolution
     # assume already in matching space
-    target_nii = nb.load(target)
-    weights_nii: nb.Nifti1Image = processing.resample_from_to(
-        from_img=nb.Nifti1Image(mask_data, gm_nii.affine, gm_nii.header),
+    target_nii = nb.nifti1.Nifti1Image.load(target)
+    weights_nii = processing.resample_from_to(
+        from_img=nb.nifti1.Nifti1Image(mask_data, gm_nii.affine, gm_nii.header),
         to_vox_map=target_nii,
         order=1,
     )
-    return nb.Nifti1Image(
+    return nb.nifti1.Nifti1Image(
         weights_nii.get_fdata() > 0.99, weights_nii.affine, weights_nii.header
     )
 
 
-@prefect.task
 @utils.cache_dataframe
 def do_compcor(
     img: Path,

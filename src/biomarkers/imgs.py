@@ -1,16 +1,16 @@
-from pathlib import Path
-import typing
 import tempfile
+import typing
+from pathlib import Path
 
-import numpy as np
 import nibabel as nb
+import numpy as np
+import polars as pl
+from nibabel import processing
+from nilearn import image, masking
 
-import prefect
-
-from .. import utils
+from biomarkers import utils
 
 
-@prefect.task
 @utils.cache_nii
 def correct_bias(
     img: Path,
@@ -18,11 +18,11 @@ def correct_bias(
     s: int | None = None,
     b: float | str | None = None,
     c: int | str | None = None,
-) -> nb.Nifti1Image:
+) -> nb.nifti1.Nifti1Image:
     import os
 
-    image = nb.load(img)
-    avg = nb.Nifti1Image(
+    image = nb.nifti1.Nifti1Image.load(img)
+    avg = nb.nifti1.Nifti1Image(
         dataobj=image.get_fdata().mean(-1), affine=image.affine, header=image.header
     )
     args = ""
@@ -40,16 +40,17 @@ def correct_bias(
                 os.system(
                     f"N4BiasFieldCorrection -i {f.name} -o [ {o.name},{biasfile.name} ] -x {mask} {args}"
                 )
-                bias_field: np.ndarray = nb.load(biasfile.name).get_fdata()
+                bias_field: np.ndarray = nb.nifti1.load(biasfile.name).get_fdata()
 
     debiased = image.get_fdata()
     for tr in range(debiased.shape[-1]):
         debiased[:, :, :, tr] /= bias_field
 
-    return nb.Nifti1Image(dataobj=debiased, affine=image.affine, header=image.header)
+    return nb.nifti1.Nifti1Image(
+        dataobj=debiased, affine=image.affine, header=image.header
+    )
 
 
-@prefect.task()
 @utils.cache_nii
 def clean_img(
     img: Path,
@@ -57,7 +58,7 @@ def clean_img(
     confounds_file: Path | None = None,
     high_pass: float | None = None,
     low_pass: float | None = None,
-    detrend: bool = False,
+    do_detrend: bool = False,
     standardize: bool = False,
     fwhm: float
     | np.ndarray
@@ -65,30 +66,27 @@ def clean_img(
     | list[float]
     | typing.Literal["fast"]
     | None = None,
-    winsorize: bool = False,
+    do_winsorize: bool = False,
     to_percentchange: bool = False,
     n_non_steady_state_tr: int = 0,
-) -> nb.Nifti1Image:
-    import pandas as pd
-    from nilearn import image
-
+) -> nb.nifti1.Nifti1Image:
     if confounds_file:
-        confounds = pd.read_parquet(confounds_file)
+        confounds = pl.read_parquet(confounds_file).to_pandas()
     else:
         confounds = None
-    nii: nb.Nifti1Image = nb.load(img).slicer[:, :, :, n_non_steady_state_tr:]
+    nii = nb.nifti1.Nifti1Image.load(img).slicer[:, :, :, n_non_steady_state_tr:]
 
     assert len(nii.shape) == 4
 
-    if detrend:
-        nii = utils.detrend(nii, mask=mask)
-    if winsorize:
-        nii = _winsorize(nii)
+    if do_detrend:
+        nii = detrend(nii, mask=mask)
+    if do_winsorize:
+        nii = winsorize(nii)
     if to_percentchange:
-        nii = _to_local_percent_change(nii)
+        nii = to_local_percent_change(nii)
 
     # note that this relies on default behavior for standardizing confounds when passed to image.clean
-    nii_clean: nb.Nifti1Image = image.clean_img(
+    nii_clean: nb.nifti1.Nifti1Image = image.clean_img(
         imgs=nii,
         high_pass=high_pass,
         low_pass=low_pass,
@@ -100,16 +98,16 @@ def clean_img(
     )  # type: ignore
 
     if fwhm:
-        nii_smoothed: nb.Nifti1Image = image.smooth_img(nii_clean, fwhm=fwhm)  # type: ignore
+        nii_smoothed: nb.nifti1.Nifti1Image = image.smooth_img(nii_clean, fwhm=fwhm)  # type: ignore
         return nii_smoothed
     else:
         return nii_clean
 
 
-def _to_local_percent_change(img: nb.Nifti1Image, fwhm: float = 16) -> nb.Nifti1Image:
-    from nibabel import processing
-
-    avg = nb.Nifti1Image(
+def to_local_percent_change(
+    img: nb.nifti1.Nifti1Image, fwhm: float = 16
+) -> nb.nifti1.Nifti1Image:
+    avg = nb.nifti1.Nifti1Image(
         dataobj=img.get_fdata().mean(-1), affine=img.affine, header=img.header
     )
     smoothed = processing.smooth_image(avg, fwhm=fwhm)
@@ -120,10 +118,10 @@ def _to_local_percent_change(img: nb.Nifti1Image, fwhm: float = 16) -> nb.Nifti1
     pc *= 100
     pc += 100
 
-    return nb.Nifti1Image(dataobj=pc, affine=img.affine, header=img.header)
+    return nb.nifti1.Nifti1Image(dataobj=pc, affine=img.affine, header=img.header)
 
 
-def _winsorize(img: nb.Nifti1Image, std: float = 3) -> nb.Nifti1Image:
+def winsorize(img: nb.nifti1.Nifti1Image, std: float = 3) -> nb.nifti1.Nifti1Image:
     # from scipy.stats import mstats
     # from scipy import stats
 
@@ -141,4 +139,34 @@ def _winsorize(img: nb.Nifti1Image, std: float = 3) -> nb.Nifti1Image:
 
     # winsorized = mstats.winsorize(img.get_fdata(), limits=[lower, upper], axis=-1)
 
-    return nb.Nifti1Image(dataobj=winsorized, affine=img.affine, header=img.header)
+    return nb.nifti1.Nifti1Image(
+        dataobj=winsorized, affine=img.affine, header=img.header
+    )
+
+
+def get_poly_design(N: int, degree: int) -> np.ndarray:
+    x = np.arange(N)
+    x = x - np.mean(x, axis=0)
+    X = np.vander(x, degree, increasing=True)
+    q, r = np.linalg.qr(X)
+
+    z = np.diag(np.diag(r))
+    raw = np.dot(q, z)
+
+    norm2 = np.sum(raw**2, axis=0)
+    Z = raw / np.sqrt(norm2)
+    return Z
+
+
+def detrend(img: nb.nifti1.Nifti1Image, mask: Path) -> nb.nifti1.Nifti1Image:
+    Y = masking.apply_mask(img, mask_img=mask)
+
+    resid = _detrend(Y=Y)
+    # Put results back into Niimg-like object
+    return masking.unmask(resid, mask)  # type: ignore
+
+
+def _detrend(Y: np.ndarray) -> np.ndarray:
+    X = get_poly_design(Y.shape[0], degree=3)
+    beta = np.linalg.pinv(X).dot(Y)
+    return Y - np.dot(X[:, 1:], beta[1:, :])
