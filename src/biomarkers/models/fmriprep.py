@@ -5,3 +5,4 @@ OUTPUT_SPACE: typing.TypeAlias = typing.Literal[
     "MNI152NLin2009cAsym:res-native:res-2", "MNI152NLin6Asym:res-native:res-2"
 ]
 BOLD2ANAT_DOF = typing.Literal[6, 9, 12]
+SPACE: typing.TypeAlias = typing.Literal["MNI152NLin2009cAsym", "MNI152NLin6Asym"]

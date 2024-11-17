@@ -3,6 +3,7 @@ from pathlib import Path
 
 from biomarkers.entrypoints import tapismpi
 from biomarkers.flows import signature
+from biomarkers.models import fmriprep
 
 
 class SignatureEntrypoint(tapismpi.TapisMPIEntrypoint):
@@ -12,7 +13,7 @@ class SignatureEntrypoint(tapismpi.TapisMPIEntrypoint):
     detrend: bool = True
     fwhm: float | None = None
     winsorize: bool = True
-    space: str = "MNI152NLin2009cAsym"
+    space: fmriprep.SPACE = "MNI152NLin6Asym"
 
     def check_outputs(self, output_dir_to_check: Path) -> bool:
         return (output_dir_to_check / "signatures").exists()

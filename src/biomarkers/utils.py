@@ -15,8 +15,6 @@ import nibabel as nb
 import numpy as np
 import pandas as pd
 import polars as pl
-from nibabel import processing
-from nilearn import _utils, masking
 
 from biomarkers.models import signatures
 
@@ -24,8 +22,8 @@ P = ParamSpec("P")
 R = TypeVar("R")
 
 FAILURE_LOG_DST = Path(os.environ.get("FAILURE_LOG_DST", "logs"))
-DIR_PERMISSIONS = 0o40750
-FILE_PERMISSIONS = 0o100640
+DIR_PERMISSIONS = 0o750
+FILE_PERMISSIONS = 0o640
 
 
 def configure_root_logger() -> None:
@@ -219,84 +217,24 @@ def gzip_file(src: Path, dst: Path):
                 d.write(chunk)
 
 
-def make_mask(img: nb.nifti1.Nifti1Image) -> nb.nifti1.Nifti1Image:
-    """Make mask that can be used as no-op.
-
-    Args:
-        img nb.Nifti1Image: Image whose shape and affine will be used to make mask.
-
-    Returns:
-        nb.Nifti1Image: Image (uint8) of size input with all values equal to 1
-    """
-    return nb.nifti1.Nifti1Image(
-        dataobj=np.ones(img.shape[:3], dtype=np.uint8), affine=img.affine
-    )
-
-
-def to_df3d(img: nb.nifti1.Nifti1Image | Path, label: str, dtype="f8") -> pl.DataFrame:
-    i: nb.nifti1.Nifti1Image = _utils.check_niimg_3d(img)  # type: ignore
-    out = masking.apply_mask(i, make_mask(i), dtype=dtype)
-    return pl.DataFrame({"voxel": np.arange(out.shape[0], dtype=np.uint32), label: out})
-
-
-def to_df4d(img: nb.nifti1.Nifti1Image | Path, dtype: str = "f8") -> pl.DataFrame:
-    """Convert 4D nifti image into polars dataframe
-
-    Args:
-        img: 4D nifti image
-        dtype: datatype for value column. Defaults to "f8".
-
-    Returns:
-        pl.DataFrame: data from input img
-    """
-
-    i: nb.nifti1.Nifti1Image = _utils.check_niimg(img, ensure_ndim=4)  # type: ignore
-    out = masking.apply_mask(i, make_mask(i), dtype=dtype)
-    d = (
-        pl.DataFrame(out, schema=[str(x) for x in range(out.shape[1])])
-        .with_columns(pl.Series("t", np.arange(out.shape[0], dtype=np.int16)))
-        .melt(id_vars=["t"], value_name="signal", variable_name="voxel")
-        .with_columns(pl.col("voxel").cast(pl.UInt32()))
-    )
-
-    return d
-
-
 @cache_dataframe
 def to_parquet3d(
-    fmriprep_func3ds: list[signatures.Func3d],
-    func3ds: list[signatures.Func3d] | None = None,
+    fmriprep_func3ds: typing.Sequence[signatures.Func3d],
+    func3ds: typing.Sequence[signatures.Func3d] | None = None,
 ) -> pl.DataFrame:
     if not len(fmriprep_func3ds):
         msg = "there should be at least 1 image to process"
         raise AssertionError(msg)
 
-    d = to_df3d(
-        fmriprep_func3ds[0].path,
-        label=fmriprep_func3ds[0].label,
-        dtype=fmriprep_func3ds[0].dtype,
-    )
-    for func3d in fmriprep_func3ds[1:]:
-        d = d.join(
-            to_df3d(
-                func3d.path,
-                label=func3d.label,
-                dtype=func3d.dtype,
-            ),
-            on="voxel",
-        )
+    d = fmriprep_func3ds[0].to_polars()
+
+    for func3d in fmriprep_func3ds:
+        d = d.join(func3d.to_polars(), on="voxel")
+
     if func3ds:
-        target = nb.loadsave.load(fmriprep_func3ds[0].path)
+        target = nb.nifti1.Nifti1Image.load(fmriprep_func3ds[0].path)
         for func3d in func3ds:
-            img = nb.loadsave.load(func3d.path)
-            d = d.join(
-                to_df3d(
-                    processing.resample_from_to(img, target, order=1),
-                    label=func3d.label,
-                    dtype=func3d.dtype,
-                ),
-                on="voxel",
-            )
+            d = d.join(func3d.to_polars(target=target), on="voxel")
     return d
 
 
@@ -304,8 +242,7 @@ def to_parquet3d(
 def update_confounds(
     confounds: Path,
     n_non_steady_state_tr: int = 0,
-    acompcor_file: Path | None = None,
-    usecols: list[str] = [
+    usecols: typing.Sequence[str] = (
         "trans_x",
         "trans_x_derivative1",
         "trans_x_power2",
@@ -330,27 +267,9 @@ def update_confounds(
         "rot_z_derivative1",
         "rot_z_power2",
         "rot_z_derivative1_power2",
-    ],
-    label: typing.Literal["CSF", "WM", "WM+CSF"] | None = "WM+CSF",
-    extra: Path | None = None,
-) -> pd.DataFrame:
-    confounds_df = pd.read_csv(confounds, delim_whitespace=True, usecols=usecols)
-    n_tr = confounds_df.shape[0] - n_non_steady_state_tr
-    components_df = confounds_df.iloc[-n_tr:, :].reset_index(drop=True)
-    if extra:
-        extra_cols = pd.read_parquet(extra)
-        components_df = pd.concat([components_df, extra_cols], axis=1)
-    if acompcor_file and label:
-        acompcor = pd.read_parquet(
-            acompcor_file, columns=["component", "tr", "value", "label"]
-        )
-        components = (
-            acompcor.query("label==@label and component < 5")
-            .drop("label", axis=1)
-            .pivot(index="tr", columns=["component"], values="value")
-        )
-        out = pd.concat([components_df, components], axis=1)
-    else:
-        out = components_df
-    out.columns = out.columns.astype(str)
-    return out
+    ),
+) -> pl.DataFrame:
+    components_df = pl.read_csv(confounds, separator="\t", columns=usecols).slice(
+        n_non_steady_state_tr
+    )
+    return components_df

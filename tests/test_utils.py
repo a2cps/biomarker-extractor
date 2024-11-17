@@ -1,7 +1,12 @@
 import os
+import stat
 from pathlib import Path
 
 from biomarkers import utils
+
+
+def get_permissions(src: Path) -> int:
+    return stat.S_IMODE(src.stat().st_mode)
 
 
 def test_img_stem_niigz():
@@ -31,15 +36,11 @@ def test_recursive_chmod(tmp_path: Path):
     dirs = []
     for dirpath, dirnames, filenames in os.walk(tmp_path):
         root = Path(dirpath)
-        fs = [oct((root / f).stat().st_mode) for f in filenames]
-        ds = [oct((root / d).stat().st_mode) for d in dirnames]
-        print(fs)
-        print(ds)
         files.extend(
-            [(root / f).stat().st_mode == utils.FILE_PERMISSIONS for f in filenames]
+            [get_permissions(root / f) == utils.FILE_PERMISSIONS for f in filenames]
         )
         dirs.extend(
-            [(root / d).stat().st_mode == utils.DIR_PERMISSIONS for d in dirnames]
+            [get_permissions(root / d) == utils.DIR_PERMISSIONS for d in dirnames]
         )
 
     assert all(files + dirs)

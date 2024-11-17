@@ -4,7 +4,7 @@ import ancpbids
 import polars as pl
 
 from biomarkers import datasets, imgs, utils
-from biomarkers.models import signatures
+from biomarkers.models import fmriprep, signatures
 
 
 def cosine_similarity(col1: str, col2: str) -> pl.Expr:
@@ -18,9 +18,9 @@ def gather_to_resample(
     layout: ancpbids.BIDSLayout,
     sub: str,
     ses: str,
-    space: str = "MNI152NLin2009cAsym",
+    space: fmriprep.SPACE = "MNI152NLin6Asym",
 ) -> list[signatures.Func3d]:
-    filters = {"sub": sub, "ses": ses, "space": space}
+    filters = {"sub": sub, "ses": ses, "space": space, "extension": ".nii.gz"}
     GM = layout.get(label="GM", return_type="filename", **filters)[0]
     WM = layout.get(label="WM", return_type="filename", **filters)[0]
     CSF = layout.get(label="CSF", return_type="filename", **filters)[0]
@@ -37,17 +37,21 @@ def get_in_space(
     ses: str,
     task: str,
     run: str,
-    space: str = "MNI152NLin2009cAsym",
+    space: fmriprep.SPACE = "MNI152NLin6Asym",
 ) -> list[signatures.Func3d]:
-    filters = {"sub": sub, "ses": ses, "space": space, "task": task, "run": run}
-    mask = layout.get(desc="brain", return_type="filename", **filters)[0]
-    aparcaseg = layout.get(desc="aparcaseg", return_type="filename", **filters)[0]
-    aseg = layout.get(desc="aseg", return_type="filename", **filters)[0]
-    return [
-        signatures.Func3d(label="brain", dtype="?", path=Path(str(mask))),
-        signatures.Func3d(label="aparcaseg", dtype="uint16", path=Path(str(aparcaseg))),
-        signatures.Func3d(label="aseg", dtype="uint8", path=Path(str(aseg))),
-    ]
+    filters = {
+        "sub": sub,
+        "ses": ses,
+        "space": space,
+        "task": task,
+        "run": run,
+        "extension": ".nii.gz",
+    }
+    masks = layout.get(desc="brain", return_type="filename", **filters)
+    if not len(masks) == 1:
+        msg = f"expected 1 mask with {filters} but found {masks}"
+        raise RuntimeError(msg)
+    return [signatures.Func3d(label="brain", dtype="?", path=Path(str(masks[0])))]
 
 
 def get(layout: ancpbids.BIDSLayout, filters: dict[str, str]) -> Path:
@@ -153,15 +157,19 @@ def signature_flow(
     detrend: bool = True,
     fwhm: float | None = None,
     winsorize: bool = True,
-    space: str = "MNI152NLin2009cAsym",
+    space: fmriprep.SPACE = "MNI152NLin6Asym",
 ) -> None:
-    signatures = get_all_signatures()
+    all_signatures = get_all_signatures()
 
     layout = ancpbids.BIDSLayout(str(subdir))
     for sub in layout.get_subjects():
         for ses in layout.get_sessions(sub=sub):
             func3ds = gather_to_resample(
-                extra=signatures, layout=layout, sub=str(sub), ses=str(ses), space=space
+                extra=all_signatures,
+                layout=layout,
+                sub=str(sub),
+                ses=str(ses),
+                space=space,
             )
 
             for task in layout.get_tasks(sub=sub, ses=ses):
@@ -215,9 +223,7 @@ def signature_flow(
                     )
 
                     cleaned = imgs.clean_img(
-                        out
-                        / "signature-cleaned"
-                        / f"sub-{sub}_ses-{ses}_task-{task}_run-{run}_desc-preproc_bold.nii.gz",
+                        out / "signature-cleaned" / preproc.name,
                         img=preproc,
                         mask=mask,
                         confounds_file=confounds,
@@ -229,7 +235,7 @@ def signature_flow(
                         to_percentchange=False,
                         n_non_steady_state_tr=n_non_steady_state_tr,
                     )
-                    bold = utils.to_df4d(img=cleaned)
+                    bold = signatures.Func4d(path=cleaned).to_polars()
 
                     fmriprep_func3ds = get_in_space(
                         layout=layout,
@@ -261,7 +267,7 @@ def signature_flow(
                         / "part-0.parquet",
                         bold=bold,
                         labels=labels,
-                        signatures=[x.label for x in signatures],
+                        signatures=[x.label for x in all_signatures],
                     )
                     sign_by_part(
                         out
@@ -273,7 +279,7 @@ def signature_flow(
                         / "part-0.parquet",
                         bold=bold,
                         labels=labels,
-                        signatures=[x.label for x in signatures],
+                        signatures=[x.label for x in all_signatures],
                     )
                     sign_by_t(
                         out
@@ -285,5 +291,5 @@ def signature_flow(
                         / "part-0.parquet",
                         bold=bold,
                         labels=labels,
-                        signatures=[x.label for x in signatures],
+                        signatures=[x.label for x in all_signatures],
                     )
