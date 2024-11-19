@@ -1,45 +1,19 @@
 import typing
 from pathlib import Path
 
-import ancpbids
 import nibabel as nb
 import numpy as np
 import polars as pl
 import pydantic
+from ancpbids import pybids_compat
 from nibabel import processing
 from nilearn import _utils, masking
 
 PROBSEG_LABEL: typing.TypeAlias = typing.Literal["WM", "CSF", "GM"]
 
 
-class ProbSeg(pydantic.BaseModel):
-    GM: pydantic.FilePath
-    WM: pydantic.FilePath
-    CSF: pydantic.FilePath
-
-    @property
-    def gm_nii(self) -> nb.nifti1.Nifti1Image:
-        return nb.nifti1.Nifti1Image.load(self.GM)
-
-    @property
-    def wm_nii(self) -> nb.nifti1.Nifti1Image:
-        return nb.nifti1.Nifti1Image.load(self.WM)
-
-    @property
-    def csf_nii(self) -> nb.nifti1.Nifti1Image:
-        return nb.nifti1.Nifti1Image.load(self.CSF)
-
-    @classmethod
-    def from_layout(cls, layout: "Layout", filters: dict[str, str]) -> typing.Self:
-        filters = {"suffix": "probseg", "extension": ".nii.gz", **filters}
-        gm = layout.get_gm(filters=filters)
-        wm = layout.get_wm(filters=filters)
-        csf = layout.get_csf(filters=filters)
-        return cls(GM=gm, WM=wm, CSF=csf)
-
-
 class Layout(pydantic.BaseModel):
-    layout: ancpbids.BIDSLayout
+    layout: pybids_compat.BIDSLayout
     model_config = pydantic.ConfigDict(arbitrary_types_allowed=True)
 
     @property
@@ -108,7 +82,33 @@ class Layout(pydantic.BaseModel):
 
     @classmethod
     def from_path(cls, src: Path) -> typing.Self:
-        return cls(layout=ancpbids.BIDSLayout(str(src)))
+        return cls(layout=pybids_compat.BIDSLayout(str(src)))
+
+
+class ProbSeg(pydantic.BaseModel):
+    GM: pydantic.FilePath
+    WM: pydantic.FilePath
+    CSF: pydantic.FilePath
+
+    @property
+    def gm_nii(self) -> nb.nifti1.Nifti1Image:
+        return nb.nifti1.Nifti1Image.load(self.GM)
+
+    @property
+    def wm_nii(self) -> nb.nifti1.Nifti1Image:
+        return nb.nifti1.Nifti1Image.load(self.WM)
+
+    @property
+    def csf_nii(self) -> nb.nifti1.Nifti1Image:
+        return nb.nifti1.Nifti1Image.load(self.CSF)
+
+    @classmethod
+    def from_layout(cls, layout: Layout, filters: dict[str, str]) -> typing.Self:
+        filters = {"suffix": "probseg", "extension": ".nii.gz", **filters}
+        gm = layout.get_gm(filters=filters)
+        wm = layout.get_wm(filters=filters)
+        csf = layout.get_csf(filters=filters)
+        return cls(GM=gm, WM=wm, CSF=csf)
 
 
 class Func3d(pydantic.BaseModel):

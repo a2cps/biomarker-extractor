@@ -245,10 +245,7 @@ def gzip_file(src: Path, dst: Path):
 
 
 @cache_dataframe
-def to_parquet3d(
-    fmriprep_func3ds: typing.Sequence[bids.Func3d],
-    func3ds: typing.Sequence[bids.Func3d] | None = None,
-) -> pl.DataFrame:
+def to_parquet3d(fmriprep_func3ds: typing.Sequence[bids.Func3d]) -> pl.DataFrame:
     if not len(fmriprep_func3ds):
         msg = "there should be at least 1 image to process"
         raise AssertionError(msg)
@@ -258,10 +255,6 @@ def to_parquet3d(
     for func3d in fmriprep_func3ds:
         d = d.join(func3d.to_polars(), on="voxel")
 
-    if func3ds:
-        target = nb.nifti1.Nifti1Image.load(fmriprep_func3ds[0].path)
-        for func3d in func3ds:
-            d = d.join(func3d.to_polars(target=target), on="voxel")
     return d
 
 
@@ -293,3 +286,13 @@ def write_parquet(d: pl.DataFrame, dst: Path):
         parent.mkdir(parents=True)
 
     d.write_parquet(file=dst)
+
+
+def check_matching_image_shapes(imgs: typing.Sequence[Path]) -> bool:
+    loaded_imgs = [nb.nifti1.Nifti1Image.load(i) for i in imgs]
+    return all(
+        [
+            np.allclose(x.shape, y.shape)
+            for x, y in zip(loaded_imgs[:-1], loaded_imgs[1:])
+        ]
+    )

@@ -2,7 +2,7 @@ import logging
 import typing
 from pathlib import Path
 
-from biomarkers import imgs
+from biomarkers import imgs, utils
 from biomarkers.models import bids, fmriprep, signatures
 
 
@@ -11,7 +11,7 @@ def signature_flow(
     out: Path,
     high_pass: float | None = None,
     low_pass: float | None = 0.1,
-    n_non_steady_state_tr: int = 12,
+    n_non_steady_state_tr: int = 15,
     detrend: bool = True,
     fwhm: float | None = None,
     winsorize: bool = True,
@@ -25,14 +25,11 @@ def signature_flow(
     layout = bids.Layout.from_path(subdir)
     for sub in layout.subjects:
         for ses in layout.get_sessions(sub=sub):
-            func3ds = signatures.gather_to_resample(
-                extra=all_signatures, layout=layout, sub=sub, ses=ses, space=space
-            )
             probseg = bids.ProbSeg.from_layout(
                 layout=layout,
                 filters={"sub": sub, "ses": ses, "space": space, "res": "2"},
             )
-            flows = {}
+            flows: dict[str, signatures.SignatureRunFlow] = {}
             for task in layout.get_tasks(sub=sub, ses=ses):
                 for run in layout.get_runs(sub=sub, ses=ses, task=task):
                     flow = signatures.SignatureRunFlow(
@@ -44,7 +41,6 @@ def signature_flow(
                         run=run,
                         space=space,
                         probseg=probseg,
-                        func3ds=func3ds,
                         all_signatures=all_signatures,
                         low_pass=low_pass,
                         high_pass=high_pass,
@@ -66,13 +62,14 @@ def signature_flow(
                         (cuff := flows.get(active)) is not None
                     ):
                         scans = f"{active}{baseline}"
-                        # may fail if baseline and active have different lengths, but we
-                        # want to ignore this and continue on anyway
-                        try:
-                            signatures.SignatureRunPairFlow(
-                                active_flow=cuff, baseline_flow=rest, scans=scans
-                            ).sign_pair()
-                        except AssertionError:
-                            logging.error(
-                                f"Failed during {scans}. Attempting to continue"
+                        if not utils.check_matching_image_shapes(
+                            [rest.cleaned, cuff.cleaned]
+                        ):
+                            logging.warning(
+                                f"Shapes don't match for {scans=}. Skipping"
                             )
+                            continue
+
+                        signatures.SignatureRunPairFlow(
+                            active_flow=cuff, baseline_flow=rest, scans=scans
+                        ).sign_pair()

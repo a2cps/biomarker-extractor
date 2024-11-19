@@ -11,7 +11,7 @@ from biomarkers.flows import signature
 @pytest.mark.parametrize("low_pass", [0.1, None])
 @pytest.mark.parametrize("detrend", [True, False])
 @pytest.mark.parametrize("winsorize", [True, False])
-@pytest.mark.parametrize("compcor_label", [typing.get_args(imgs.COMPCOR_LABEL)])
+@pytest.mark.parametrize("compcor_label", typing.get_args(imgs.COMPCOR_LABEL))
 def test_sig_flow(
     tmp_path: Path,
     low_pass: float | None,
@@ -23,7 +23,7 @@ def test_sig_flow(
         Path("/Users/psadil/git/a2cps/biomarkers/tests/data/fmriprep"),
         out=tmp_path,
         low_pass=low_pass,
-        n_non_steady_state_tr=12,
+        n_non_steady_state_tr=15,
         detrend=detrend,
         winsorize=winsorize,
         compcor_label=compcor_label,
@@ -36,7 +36,6 @@ def test_sig_flow(
             "signatures-by-tr",
             "signatures-cleaned",
             "signatures-confounds",
-            "signatures-labels",
         )
     ]
     assert all(exists)
@@ -47,9 +46,9 @@ def test_sig_pair_flow(tmp_path: Path):
         Path("/Users/psadil/git/a2cps/biomarkers/tests/data/fmriprep"),
         out=tmp_path,
         low_pass=None,
-        n_non_steady_state_tr=12,
-        baseline_list=["rest01", "rest02"],
-        active_list=["cuff01", "cuff02"],
+        n_non_steady_state_tr=15,
+        baseline_list=["rest1", "rest2"],
+        active_list=["cuff1", "cuff2"],
     )
     exists = [
         (tmp_path / d).exists()
@@ -57,12 +56,11 @@ def test_sig_pair_flow(tmp_path: Path):
             "signatures-by-part",
             "signatures-by-run",
             "signatures-by-tr",
-            "signatures-by-part-diffs",
-            "signatures-by-run-diffs",
-            "signatures-by-tr-diffs",
+            "signatures-by-part-diff",
+            "signatures-by-run-diff",
+            "signatures-by-tr-diff",
             "signatures-cleaned",
             "signatures-confounds",
-            "signatures-labels",
         )
     ]
     assert all(exists)
@@ -77,7 +75,7 @@ async def test_sig_entrypoint(tmp_path: Path):
         ins=[Path("/Users/psadil/git/a2cps/biomarkers/tests/data/fmriprep")],
         outs=[out],
         low_pass=0.1,
-        n_non_steady_state_tr=12,
+        n_non_steady_state_tr=15,
         detrend=False,
         winsorize=False,
     ).run()
