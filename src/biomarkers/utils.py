@@ -16,7 +16,7 @@ import numpy as np
 import pandas as pd
 import polars as pl
 
-from biomarkers.models import signatures
+from biomarkers.models import bids
 
 P = ParamSpec("P")
 R = TypeVar("R")
@@ -24,6 +24,33 @@ R = TypeVar("R")
 FAILURE_LOG_DST = Path(os.environ.get("FAILURE_LOG_DST", "logs"))
 DIR_PERMISSIONS = 0o750
 FILE_PERMISSIONS = 0o640
+MOTION_PARAMETERS: typing.TypeAlias = typing.Literal[
+    "trans_x",
+    "trans_x_derivative1",
+    "trans_x_power2",
+    "trans_x_derivative1_power2",
+    "trans_y",
+    "trans_y_derivative1",
+    "trans_y_power2",
+    "trans_y_derivative1_power2",
+    "trans_z",
+    "trans_z_derivative1",
+    "trans_z_power2",
+    "trans_z_derivative1_power2",
+    "rot_x",
+    "rot_x_derivative1",
+    "rot_x_power2",
+    "rot_x_derivative1_power2",
+    "rot_y",
+    "rot_y_derivative1",
+    "rot_y_power2",
+    "rot_y_derivative1_power2",
+    "rot_z",
+    "rot_z_derivative1",
+    "rot_z_power2",
+    "rot_z_derivative1_power2",
+]
+FRISTON_24: tuple[MOTION_PARAMETERS, ...] = typing.get_args(MOTION_PARAMETERS)
 
 
 def configure_root_logger() -> None:
@@ -219,8 +246,8 @@ def gzip_file(src: Path, dst: Path):
 
 @cache_dataframe
 def to_parquet3d(
-    fmriprep_func3ds: typing.Sequence[signatures.Func3d],
-    func3ds: typing.Sequence[signatures.Func3d] | None = None,
+    fmriprep_func3ds: typing.Sequence[bids.Func3d],
+    func3ds: typing.Sequence[bids.Func3d] | None = None,
 ) -> pl.DataFrame:
     if not len(fmriprep_func3ds):
         msg = "there should be at least 1 image to process"
@@ -242,34 +269,27 @@ def to_parquet3d(
 def update_confounds(
     confounds: Path,
     n_non_steady_state_tr: int = 0,
-    usecols: typing.Sequence[str] = (
-        "trans_x",
-        "trans_x_derivative1",
-        "trans_x_power2",
-        "trans_x_derivative1_power2",
-        "trans_y",
-        "trans_y_derivative1",
-        "trans_y_power2",
-        "trans_y_derivative1_power2",
-        "trans_z",
-        "trans_z_derivative1",
-        "trans_z_power2",
-        "trans_z_derivative1_power2",
-        "rot_x",
-        "rot_x_derivative1",
-        "rot_x_power2",
-        "rot_x_derivative1_power2",
-        "rot_y",
-        "rot_y_derivative1",
-        "rot_y_power2",
-        "rot_y_derivative1_power2",
-        "rot_z",
-        "rot_z_derivative1",
-        "rot_z_power2",
-        "rot_z_derivative1_power2",
-    ),
+    usecols: typing.Sequence[str] = FRISTON_24,
+    compcor: pl.DataFrame | None = None,
 ) -> pl.DataFrame:
-    components_df = pl.read_csv(confounds, separator="\t", columns=usecols).slice(
-        n_non_steady_state_tr
+    out = (
+        pl.read_csv(confounds, separator="\t", columns=usecols)
+        .with_row_index("t")
+        .slice(n_non_steady_state_tr)
     )
-    return components_df
+    if compcor is not None:
+        # right join because of slice above
+        out = (
+            compcor.filter(pl.col("component") < 5)
+            .pivot(on="component", index="t", values="value")
+            .join(out, how="right", on="t")
+        )
+
+    return out.drop("t")
+
+
+def write_parquet(d: pl.DataFrame, dst: Path):
+    if not (parent := dst.parent).exists():
+        parent.mkdir(parents=True)
+
+    d.write_parquet(file=dst)
