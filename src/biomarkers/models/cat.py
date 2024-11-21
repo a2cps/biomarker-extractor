@@ -70,10 +70,11 @@ class CATMRI:
 class CATReport:
     subdir: pydantic.DirectoryPath
     catlog: pydantic.FilePath
-    catreportj: pydantic.FilePath
-    catreport: pydantic.FilePath
     cat_mat: pydantic.FilePath
     cat_xml: pydantic.FilePath
+    # some versions of cat12 have issues generating these
+    catreportj: Path
+    catreport: Path
 
     @classmethod
     def from_root(cls, root: Path, src: str) -> typing.Self:
