@@ -1,12 +1,13 @@
-from __future__ import annotations
-
 import typing
 from pathlib import Path
 
+import nibabel as nb
+import numpy as np
+import pandas as pd
 import pydantic
 from pydantic.dataclasses import dataclass
 
-from biomarkers import utils
+from biomarkers import datasets, utils
 
 
 @dataclass(frozen=True)
@@ -75,7 +76,7 @@ class CATReport:
     cat_xml: pydantic.FilePath
 
     @classmethod
-    def from_root(cls, root: Path, src: str) -> CATReport:
+    def from_root(cls, root: Path, src: str) -> typing.Self:
         subdir = root / "report"
         return cls(
             subdir=subdir,
@@ -106,7 +107,7 @@ class CATSurf:
     rh_white: pydantic.FilePath
 
     @classmethod
-    def from_root(cls, root: Path, src: str) -> CATSurf:
+    def from_root(cls, root: Path, src: str) -> typing.Self:
         subdir = root / "surf"
         return cls(
             subdir=subdir,
@@ -137,7 +138,7 @@ class CATResult:
     surf: CATSurf
 
     @classmethod
-    def from_root(cls, root: Path, img: Path) -> CATResult:
+    def from_root(cls, root: Path, img: Path) -> typing.Self:
         src = utils.img_stem(img)
         return cls(
             root=root,
@@ -147,3 +148,14 @@ class CATResult:
             report=CATReport.from_root(root=root, src=src),
             surf=CATSurf.from_root(root=root, src=src),
         )
+
+    def write_volumes(self, filename, mask: Path = datasets.get_mpfc_mask()) -> None:
+        sample_mask = np.asanyarray(nb.nifti1.load(mask).dataobj, dtype=np.bool_)
+        modulated = nb.nifti1.load(self.mri.mwp1sub)
+        modulated_arr = np.asanyarray(modulated.dataobj)
+        mean = np.mean(modulated_arr, where=sample_mask)
+        d = pd.DataFrame(
+            {"mPFC": mean, "volume": mean * np.prod(modulated.header.get_zooms())},
+            index=[self.mri.mwp1sub],
+        )
+        d.to_csv(filename, sep="\t", index_label="file")
