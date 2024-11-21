@@ -33,7 +33,6 @@ class CATMRI:
     misub: pydantic.FilePath
     mwp1sub: pydantic.FilePath
     mwp2sub: pydantic.FilePath
-    nsub: pydantic.FilePath
     p0sub: pydantic.FilePath
     p1sub: pydantic.FilePath
     p2sub: pydantic.FilePath
@@ -43,6 +42,7 @@ class CATMRI:
     wp1sub: pydantic.FilePath
     wp2sub: pydantic.FilePath
     y_sub: pydantic.FilePath
+    nsub: Path | None = None
 
     @classmethod
     def from_root(cls, root: Path, src: str) -> typing.Self:
@@ -73,8 +73,8 @@ class CATReport:
     cat_mat: pydantic.FilePath
     cat_xml: pydantic.FilePath
     # some versions of cat12 have issues generating these
-    catreportj: Path
-    catreport: Path
+    catreportj: Path | None = None
+    catreport: Path | None = None
 
     @classmethod
     def from_root(cls, root: Path, src: str) -> typing.Self:
