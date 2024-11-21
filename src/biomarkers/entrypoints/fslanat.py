@@ -50,13 +50,13 @@ class FSLAnatEntrypoint(tapis.TapisEntrypoint):
             logging.info(f"Looking for *T1w.nii.gz in {ind}")
             nii = list(d for d in ind.rglob("*T1w.nii.gz"))
             if not len(nii) == 1:
-                msg = f"Unexpected number of *T1w.nii.gz found within {ind}, {len(nii)=}"
+                msg = (
+                    f"Unexpected number of *T1w.nii.gz found within {ind}, {len(nii)=}"
+                )
                 raise AssertionError(msg)
             else:
                 logging.info(f"Staging {nii[0]}")
-                staged_file = shutil.copyfile(
-                    nii[0], self.stage_dir / nii[0].name
-                )
+                staged_file = shutil.copyfile(nii[0], self.stage_dir / nii[0].name)
                 niis.append(staged_file)
                 output_dirs.append(self.stage_dir / outd)
         return niis, output_dirs

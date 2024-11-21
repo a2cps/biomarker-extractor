@@ -1,34 +1,18 @@
 from pathlib import Path
 
-import numpy as np
-
+import ancpbids
 import nibabel as nb
+import numpy as np
 import pandas as pd
-
-from sklearn import covariance
-
-from pydantic.dataclasses import dataclass
-
+import prefect
 from nilearn import maskers
 from nilearn.connectome import ConnectivityMeasure
-
-import ancpbids
-
-import prefect
+from sklearn import covariance
 
 from biomarkers import utils
-from biomarkers.task import utils as task_utils
-from biomarkers.task import compcor
 from biomarkers.flows.signature import _get
-
-
-# TODO: remove 8 nodes from Power2011 atlas that are in the cerebellum
-
-
-@dataclass(frozen=True)
-class Coordinate:
-    label: str
-    seed: tuple[int, int, int]
+from biomarkers.task import compcor
+from biomarkers.task import utils as task_utils
 
 
 def df_to_coordinates(dataframe: pd.DataFrame) -> frozenset[Coordinate]:
@@ -54,12 +38,8 @@ def get_baliki_coordinates() -> frozenset[Coordinate]:
 def get_power_coordinates() -> frozenset[Coordinate]:
     from nilearn import datasets
 
-    rois: pd.DataFrame = datasets.fetch_coords_power_2011(
-        legacy_format=False
-    ).rois
-    rois.query(
-        "not roi in [127, 183, 184, 185, 243, 244, 245, 246]", inplace=True
-    )
+    rois: pd.DataFrame = datasets.fetch_coords_power_2011(legacy_format=False).rois
+    rois.query("not roi in [127, 183, 184, 185, 243, 244, 245, 246]", inplace=True)
     rois.rename(columns={"roi": "label"}, inplace=True)
     return df_to_coordinates(rois)
 
@@ -101,7 +81,7 @@ def spheres_connectivity(
         kind="correlation",
     )
     correlation_matrix = connectivity_measure.fit_transform([time_series]).squeeze()  # type: ignore
-    df = utils._mat_to_df(correlation_matrix, [x.label for x in coordinates])
+    df = utils.mat_to_df(correlation_matrix, [x.label for x in coordinates])
     df["connectivity"] = np.arctanh(df["connectivity"])
     return df
 
@@ -144,7 +124,7 @@ def get_labels_connectivity(
     correlation_matrix: np.ndarray = connectivity_measure.fit_transform(
         [time_series]
     ).squeeze()  # type: ignore
-    df = utils._mat_to_df(
+    df = utils.mat_to_df(
         correlation_matrix,
         [str(x + 1) for x in range(correlation_matrix.shape[0])],
     ).assign(
@@ -154,7 +134,7 @@ def get_labels_connectivity(
     return df
 
 
-def _get_probseg(layout, sub, ses, space) -> int:
+def _get_probseg(layout, sub, ses, space) -> list[Path]:
     return [
         _get.fn(
             layout=layout,
@@ -186,9 +166,7 @@ def connectivity_flow(
         layout = ancpbids.BIDSLayout(str(subdir))
         for sub in layout.get_subjects():
             for ses in layout.get_sessions(sub=sub):
-                probseg = _get_probseg(
-                    layout=layout, sub=sub, ses=ses, space=space
-                )
+                probseg = _get_probseg(layout=layout, sub=sub, ses=ses, space=space)
                 for task in layout.get_tasks(sub=sub, ses=ses):
                     for run in layout.get_runs(sub=sub, ses=ses, task=task):
                         i = _get(

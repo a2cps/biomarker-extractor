@@ -126,9 +126,7 @@ def _main(
 )
 @click.option(
     "--tmpdir",
-    type=click.Path(
-        exists=True, file_okay=False, dir_okay=True, resolve_path=True
-    ),
+    type=click.Path(exists=True, file_okay=False, dir_okay=True, resolve_path=True),
 )
 @click.option("--sub-limit", type=int, default=None)
 def main(
@@ -144,18 +142,14 @@ def main(
     # Though, it's also not clear that there is enough benefit to letting Dask spill memory onto
     # disk, so they are staying off for now
     # the last one would be what to try removing firstish
-    config.set(
-        {"distributed.worker.memory.rebalance.measure": "managed_in_memory"}
-    )
+    config.set({"distributed.worker.memory.rebalance.measure": "managed_in_memory"})
     config.set({"distributed.worker.memory.spill": False})
     config.set({"distributed.worker.memory.target": False})
     config.set({"distributed.worker.memory.pause": False})
     config.set({"distributed.worker.memory.terminate": False})
     config.set({"distributed.comm.timeouts.connect": "90s"})
     config.set({"distributed.comm.timeouts.tcp": "90s"})
-    config.set(
-        {"distributed.nanny.pre-spawn-environ.MALLOC_TRIM_THRESHOLD_": 0}
-    )
+    config.set({"distributed.nanny.pre-spawn-environ.MALLOC_TRIM_THRESHOLD_": 0})
 
     if tmpdir:
         os.environ["TMPDIR"] = tmpdir
@@ -163,14 +157,10 @@ def main(
         output_dir.mkdir()
 
     rest_subdirs = (
-        frozenset(list(rest_dir.glob("sub*"))[0:sub_limit])
-        if rest_dir
-        else None
+        frozenset(list(rest_dir.glob("sub*"))[0:sub_limit]) if rest_dir else None
     )
     cuff_subdirs = (
-        frozenset(list(cuff_dir.glob("sub*"))[0:sub_limit])
-        if cuff_dir
-        else None
+        frozenset(list(cuff_dir.glob("sub*"))[0:sub_limit]) if cuff_dir else None
     )
     fmriprep_subdirs = (
         frozenset(list(fmriprep_dir.glob("sub*"))[0:sub_limit])

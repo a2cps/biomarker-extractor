@@ -1,27 +1,21 @@
-from pathlib import Path
 import re
+from pathlib import Path
 from typing import Literal
 
+import nibabel as nb
 import numpy as np
 import pandas as pd
-import pydantic
-from pydantic.dataclasses import dataclass
-
-import nibabel as nb
-from nibabel import processing
-from scipy import stats, ndimage, spatial
-
-from nilearn import masking
-
 import prefect
+import pydantic
+from nibabel import processing
+from nilearn import masking
+from pydantic.dataclasses import dataclass
+from scipy import ndimage, spatial, stats
 
 # from prefect.tasks import task_input_hash
-
 from .. import utils
-
-from ..task import utils as task_utils
 from ..task import imgs
-
+from ..task import utils as task_utils
 
 # from sklearn.decomposition import PCA
 
@@ -60,7 +54,9 @@ def _add_parts_inplace(d: pd.DataFrame) -> None:
 @prefect.task
 @utils.cache_dataframe
 def apply_regionweights(
-    img: Path, weights: Path, method: list[Literal["dot", "cosine", "correlation"]]
+    img: Path,
+    weights: Path,
+    method: list[Literal["dot", "cosine", "correlation"]],
 ) -> pd.DataFrame:
     nii = nb.load(img)
 
@@ -74,10 +70,9 @@ def apply_regionweights(
 
     # structure matches fsl cluster 26 connectivity
     labeled: np.ndarray = ndimage.label(  # type: ignore
-        weights_nii.get_fdata(), structure=ndimage.generate_binary_structure(3, 3)
-    )[
-        0
-    ]  # type: ignore
+        weights_nii.get_fdata(),
+        structure=ndimage.generate_binary_structure(3, 3),
+    )[0]  # type: ignore
 
     out = []
     # first roi is background
@@ -199,7 +194,6 @@ def apply_weights(
     method: list[Literal["dot", "cosine", "correlation"]],
     mask: Path | None = None,
 ) -> pd.DataFrame:
-
     nii = nb.load(img)
 
     weights_raw = nb.load(weights)
@@ -389,15 +383,14 @@ def cuff_flow(
         "dot",
         "cosine",
         "correlation",
-    ]
+    ],
     # mahalanobis_sd: float | None = 3,
 ) -> None:
-
     nps = utils.get_nps_mask("group")
     nps_binary = utils.get_nps_mask("binary")
     # pos = utils.get_nps_mask("positive")
     # neg = utils.get_nps_mask("negative")
-    roi = utils.get_nps_mask("rois")
+    # roi = utils.get_nps_mask("rois")
 
     for subdir in subdirs:
         # not submitting to enable acess of individual parts

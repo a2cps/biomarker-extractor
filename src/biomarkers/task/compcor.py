@@ -106,7 +106,6 @@ def get_components(
     n_non_steady_state_tr: int = 0,
     detrend: bool = False,
 ) -> pd.DataFrame:
-
     from nilearn import signal
     from nilearn.masking import apply_mask
 
@@ -134,7 +133,6 @@ def get_acompcor_mask(
     gray_matter: Path,
     mask_matters: list[Path],
 ) -> nb.Nifti1Image:
-
     from skimage.morphology import ball
     from scipy import ndimage
 
@@ -144,7 +142,7 @@ def get_acompcor_mask(
     mask_data = np.zeros(gm_nii.shape, dtype=np.bool_)
     for mask in mask_matters:
         mask_data |= np.asarray(nb.load(mask).dataobj, dtype=np.bool_)
-        if not "CSF" in mask.stem:
+        if "CSF" not in mask.stem:
             # Dilate the GM mask
             gm_dilated = ndimage.binary_dilation(
                 gm_nii.get_fdata() > 0.05, structure=ball(3)
@@ -176,7 +174,6 @@ def do_compcor(
     n_non_steady_state_tr: int = 0,
     detrend: bool = False,
 ) -> pd.DataFrame:
-
     compcors = []
     masks = {
         "GM": [x for x in probseg if "GM" in x.stem][0],

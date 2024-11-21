@@ -23,9 +23,7 @@ class MRIQCEntrypoint(tapismpi.TapisMPIEntrypoint):
             len(list((output_dir_to_check / "mriqc").glob("*html"))) > 0
         )
 
-    def get_args(
-        self, bidsdir: Path, outdir: Path, work_dir: Path
-    ) -> list[str]:
+    def get_args(self, bidsdir: Path, outdir: Path, work_dir: Path) -> list[str]:
         args = ["mriqc", "--notrack", "--no-sub"]
         if self.verbose_reports:
             args.append("--verbose-reports")
@@ -43,7 +41,6 @@ class MRIQCEntrypoint(tapismpi.TapisMPIEntrypoint):
         return args
 
     async def run_flow(self, tmpd_in: Path, tmpd_out: Path) -> None:
-
         with tempfile.TemporaryDirectory() as tmpd:
             async with utils.subprocess_manager(
                 log=tmpd_out / f"mriqc_rank-{self.RANK}.log",
