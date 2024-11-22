@@ -40,7 +40,7 @@ def _add_tapis_files_to_tarball(tarball: Path) -> None:
         for stderr in cwd.glob("*.err"):
             tf.add(stderr, stderr.name)
         for stdout in cwd.glob("*.out"):
-            tf.add(stderr, stdout.name)
+            tf.add(stdout, stdout.name)
 
 
 class TapisEntrypoint(pydantic.BaseModel):
