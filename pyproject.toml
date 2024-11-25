@@ -4,20 +4,17 @@ version = "0.1.0"
 readme = "README.md"
 requires-python = ">=3.10"
 dependencies = [
+    "ancpbids>=0.2.5",
     "mpi4py>=3.1.6",
-    "nibabel",
+    "nibabel>=5.3.2",
+    "nilearn>=0.10.4",
+    "numpy>=2.1.2",
+    "polars>=1.13.1",
+    "pyarrow>=18.0.0",
+    "pydantic>=2.9.2",
+    "scikit-image>=0.24.0",
+    "scikit-learn>=1.5.2",
 ]
-# note some dependencies only available through conda (see env.yml)
-# downloaded from channel https://fsl.fmrib.ox.ac.uk/fsldownloads/fslconda/public
-#   - bc <--- FSL sripts seem to depend on this
-#   - fsl-first 
-#   - fsl-misc_scripts <--- contains fsl_anat function
-#   - fsl-bet2 <--- required by fsl_anat when images need brain extraction
-#   - fsl-data_standard <--- for registration during fsl_anat
-#   - fsl-data_first_models_336_bin <--- for segmentation during fsl_first
-# NOTE: environmental variables must also be set see the Dockerfile, in particular
-# FSLOUTPUTTYPE=NIFTI_GZ
-# FSLDIR=/opt/conda  ---- or, in general path_to_conda_env, e.g., $HOME/conda/envs/fsl/envs/biomarkers
 
 
 [build-system]
@@ -26,14 +23,21 @@ build-backend = "hatchling.build"
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
-
-[tool.mypy]
-mypy_path = ".typings"
+markers = ["mpi: tests that require mpirun"]
+asyncio_default_fixture_loop_scope = "function"
 
 [tool.uv]
 dev-dependencies = [
     "pre-commit>=4.0.1",
+    "pytest-asyncio>=0.24.0",
+    "pytest>=8.3.3",
 ]
 
 [tool.ruff]
-exclude = ["tools", "src/biomarkers/flows/connectivity.py"]
+exclude = ["tools"]
+
+[tool.hatch.envs.default]
+installer = "uv"
+
+[[tool.hatch.envs.test.matrix]]
+python = ["3.12", "3.11"]
