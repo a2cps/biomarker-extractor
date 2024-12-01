@@ -72,55 +72,50 @@ class TapisMPIEntrypoint(pydantic.BaseModel):
 
     def archive(self, src: Path) -> None:
         # parallel (across mpi jobs)
-        with tempfile.TemporaryDirectory() as tmpd_:
-            tmpd = Path(tmpd_)
-            tarballs: dict[int, Path] = {}
+        tarballs: dict[int, Path] = {}
+        try:
+            if self.check_outputs(src):
+                tarballs[self.RANK] = (
+                    self.outs[self.RANK] / f"uuid-{self.job_id}_rank-{self.RANK}.tar"
+                )
+                utils.recursive_chmod(src)
+            else:
+                logging.warning(f"Failure detected for {self.outs[self.RANK]=}")
+        except Exception:
+            logging.exception(f"Failed to chmod {self.outs[self.RANK]=}")
+            if tarballs.get(self.RANK):
+                del tarballs[self.RANK]
+
+        # serial
+        for dst in iterate_byrank_serial(self.outs, self.RANK):
             try:
-                if self.check_outputs(src):
-                    logging.info(f"Creating tar of {src} in {tmpd}")
-                    tarballs[self.RANK] = (
-                        tmpd / f"uuid-{self.job_id}_rank-{self.RANK}.tar"
-                    )
-                    utils.recursive_chmod(src)
-                    with tarfile.open(tarballs[self.RANK], mode="w") as tf:
+                if tarball := tarballs.get(self.RANK):
+                    logging.info(f"Making {tarball}")
+                    if not dst.exists():
+                        utils.mkdir_recursive(dst, mode=utils.DIR_PERMISSIONS)
+                    with tarfile.open(tarball, mode="w") as tf:
                         tf.add(src, arcname=".")
+                    logging.info("Finished tar")
             except Exception:
-                logging.exception(f"Failed to tar {self.outs[self.RANK]=}")
+                logging.exception(f"Failed to archive {self.outs[self.RANK]=}")
+                if tf := tarballs.get(self.RANK):
+                    if tf.exists():
+                        tf.unlink()
+                    # delete so that failures to tar still trigger copying of
+                    # failure logs
+                    del tarballs[self.RANK]
 
-            # src (underneath /tmp) will automatically be deleted after the final copy but
-            # archiving with tar creates a duplicate of all products, which could
-            # be too much for the filesystem. So here we manually delete things.
-            # But we keep the top-level files, because those will be logs
-            # that might need saving
-            try:
-                logging.info(f"Removing unarchived products {src}")
-                for item in src.glob("*"):
-                    if item.is_dir():
-                        shutil.rmtree(item)
-            except Exception:
-                logging.exception(f"Failed to remove unarchived products {src}")
-
-            # serial
-            for dst in iterate_byrank_serial(self.outs, self.RANK):
-                try:
-                    if tarball := tarballs.get(self.RANK):
-                        logging.info(f"Copying {tarball} -> {dst}")
-                        if not dst.exists():
-                            utils.mkdir_recursive(dst, mode=utils.DIR_PERMISSIONS)
-                        shutil.copyfile(tarball, dst / tarball.name)
-                    else:
-                        # in case of failures, it's helpful to keep logs around
-                        log_dst = utils.FAILURE_LOG_DST / dst.stem
-                        logging.warning(
-                            f"Failure detected for {self.outs[self.RANK]=}. Copying logs to {log_dst}"
-                        )
-                        if not log_dst.exists():
-                            utils.mkdir_recursive(log_dst, mode=utils.DIR_PERMISSIONS)
-                        for log in src.glob("*log"):
-                            shutil.copyfile(log, log_dst / log.name)
-                            tapis._copy_tapis_files(log_dst)
-                except Exception:
-                    logging.exception(f"Failed to archive {self.outs[self.RANK]=}")
+            if tarballs.get(self.RANK) is None:
+                # in case of failures, it's helpful to keep logs around
+                log_dst = utils.FAILURE_LOG_DST / dst.stem
+                logging.warning(
+                    f"Failure detected for {self.outs[self.RANK]=}. Copying logs to {log_dst}"
+                )
+                if not log_dst.exists():
+                    utils.mkdir_recursive(log_dst, mode=utils.DIR_PERMISSIONS)
+                for log in src.glob("*log"):
+                    shutil.copyfile(log, log_dst / log.name)
+                    tapis._copy_tapis_files(log_dst)
 
     async def run(self):
         with tempfile.TemporaryDirectory() as _tmpd_in:
@@ -143,8 +138,8 @@ class TapisMPIEntrypoint(pydantic.BaseModel):
                     self.copy_tapis_logs_to_out()
 
     def copy_tapis_logs_to_out(self) -> None:
-        logging.info("Adding job logs to outputs")
         for outdir in iterate_byrank_serial(self.outs, self.RANK):
+            logging.info("Adding job logs to outputs")
             try:
                 # when there was a success, there should be a tarball in the
                 # output folder. The out,err files need to be added
