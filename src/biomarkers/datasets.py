@@ -116,7 +116,8 @@ def get_power2011_coordinates() -> pl.DataFrame:
     """
     return pl.read_csv(get_power2011_coordinates_file(), separator="\t")
 
+
 def get_cat_batch() -> Path:
-    with resources.path("biomarkers.data", "batch.m") as f:
+    with resources.as_file(resources.files("biomarkers.data").joinpath("batch.m")) as f:
         mpfc = f
     return mpfc

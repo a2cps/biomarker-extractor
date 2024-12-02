@@ -1,4 +1,5 @@
 import logging
+import typing
 from pathlib import Path
 
 from biomarkers import imgs
@@ -10,24 +11,25 @@ from biomarkers.models import fmriprep
 class SignatureEntrypoint(tapismpi.TapisMPIEntrypoint):
     high_pass: float | None = None
     low_pass: float | None = 0.1
-    n_non_steady_state_tr: int = 12
+    n_non_steady_state_tr: int = 15
     detrend: bool = True
     fwhm: float | None = None
     winsorize: bool = True
     space: fmriprep.SPACE = "MNI152NLin6Asym"
     compcor_label: imgs.COMPCOR_LABEL | None = None
+    baseline_list: typing.Sequence[str] | None = None
+    active_list: typing.Sequence[str] | None = None
 
     def check_outputs(self, output_dir_to_check: Path) -> bool:
         return all(
             [
                 (output_dir_to_check / d).exists()
                 for d in (
-                    "signature-by-part",
-                    "signature-by-run",
-                    "signature-by-tr",
-                    "signature-cleaned",
-                    "signature-confounds",
-                    "signature-labels",
+                    "signatures-by-part",
+                    "signatures-by-run",
+                    "signatures-by-tr",
+                    "signatures-cleaned",
+                    "signatures-confounds",
                 )
             ]
         )
@@ -45,5 +47,7 @@ class SignatureEntrypoint(tapismpi.TapisMPIEntrypoint):
             winsorize=self.winsorize,
             space=self.space,
             compcor_label=self.compcor_label,
+            baseline_list=self.baseline_list,
+            active_list=self.active_list,
         )
         logging.info("done")
