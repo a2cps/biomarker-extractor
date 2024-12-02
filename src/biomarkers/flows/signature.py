@@ -3,7 +3,7 @@ import typing
 from pathlib import Path
 
 from biomarkers import imgs, utils
-from biomarkers.models import bids, fmriprep, signatures
+from biomarkers.models import bids, fmriprep, postprocess, signatures
 
 
 def signature_flow(
@@ -25,14 +25,10 @@ def signature_flow(
     layout = bids.Layout.from_path(subdir)
     for sub in layout.subjects:
         for ses in layout.get_sessions(sub=sub):
-            probseg = bids.ProbSeg.from_layout(
-                layout=layout,
-                filters={"sub": sub, "ses": ses, "space": space, "res": "2"},
-            )
             flows: dict[str, signatures.SignatureRunFlow] = {}
             for task in layout.get_tasks(sub=sub, ses=ses):
                 for run in layout.get_runs(sub=sub, ses=ses, task=task):
-                    flow = signatures.SignatureRunFlow(
+                    process_flow = postprocess.PostProcessRunFlow(
                         dst=out,
                         sub=sub,
                         ses=ses,
@@ -40,8 +36,6 @@ def signature_flow(
                         task=task,
                         run=run,
                         space=space,
-                        probseg=probseg,
-                        all_signatures=all_signatures,
                         low_pass=low_pass,
                         high_pass=high_pass,
                         n_non_steady_state_tr=n_non_steady_state_tr,
@@ -49,6 +43,9 @@ def signature_flow(
                         fwhm=fwhm,
                         winsorize=winsorize,
                         compcor_label=compcor_label,
+                    )
+                    flow = signatures.SignatureRunFlow(
+                        process_flow=process_flow, all_signatures=all_signatures
                     )
                     flow.sign_run()
                     flows[f"{task}{run}"] = flow
@@ -63,7 +60,7 @@ def signature_flow(
                     ):
                         scans = f"{active}{baseline}"
                         if not utils.check_matching_image_shapes(
-                            [rest.cleaned, cuff.cleaned]
+                            [rest.process_flow.cleaned, cuff.process_flow.cleaned]
                         ):
                             logging.warning(
                                 f"Shapes don't match for {scans=}. Skipping"
