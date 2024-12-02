@@ -34,7 +34,10 @@ dev-dependencies = [
 ]
 
 [tool.ruff]
-exclude = ["tools", "src/biomarkers/flows/connectivity.py"]
+exclude = ["tools"]
 
 [tool.hatch.envs.default]
 installer = "uv"
+
+[[tool.hatch.envs.test.matrix]]
+python = ["3.12", "3.11"]
