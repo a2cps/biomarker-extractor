@@ -3,6 +3,7 @@ from importlib import resources
 from pathlib import Path
 
 import polars as pl
+import pydantic
 
 NPSWeights: typing.TypeAlias = typing.Literal[
     "FDR05_negative_smoothed_larger_than_10vox",
@@ -38,6 +39,26 @@ SIIPS1Weights: typing.TypeAlias = typing.Literal[
 
 FAN_RESOLUTION: typing.TypeAlias = typing.Literal["2mm", "3mm"]
 
+YeoNetworks: typing.TypeAlias = typing.Literal[7, 17]
+SchaeferNROI: typing.TypeAlias = typing.Literal[400]
+SchaeferResolution: typing.TypeAlias = typing.Literal[2]
+
+FanResolution: typing.TypeAlias = typing.Literal[2, 3]
+
+DIFUMODimension: typing.TypeAlias = typing.Literal[64, 128, 256, 512, 1024]
+DIFUMOResolution: typing.TypeAlias = typing.Literal[2, 3]
+
+GordonResolution: typing.TypeAlias = typing.Literal[1, 2, 3]
+
+GordonSpace: typing.TypeAlias = typing.Literal["MNI", "711-2b"]
+
+
+class Labels(pydantic.BaseModel):
+    labels_img: pydantic.FilePath
+    labels: pl.DataFrame
+
+    model_config = pydantic.ConfigDict(arbitrary_types_allowed=True)
+
 
 def get_nps(weights: NPSWeights) -> Path:
     fname = f"weights_NSF_{weights}.nii.gz"
@@ -72,21 +93,6 @@ def get_mpfc_mask() -> Path:
     return mpfc
 
 
-def get_fan_atlas_file(resolution: FAN_RESOLUTION = "2mm") -> Path:
-    """Return file from ToPS model (https://doi.org/10.1038/s41591-020-1142-7)
-
-    Returns:
-        Path: Path to atlas
-    """
-    with resources.as_file(
-        resources.files("biomarkers.data").joinpath(
-            f"Fan_et_al_atlas_r279_MNI_{resolution}.nii.gz"
-        )
-    ) as f:
-        atlas = f
-    return atlas
-
-
 def get_power2011_coordinates_file() -> Path:
     """Return file for volumetric atlas from Power et al. 2011 (https://doi.org/10.1016/j.neuron.2011.09.006)
 
@@ -98,14 +104,6 @@ def get_power2011_coordinates_file() -> Path:
     ) as f:
         atlas = f
     return atlas
-
-
-def get_mni6gray_mask() -> Path:
-    with resources.as_file(
-        resources.files("biomarkers.data").joinpath("MNI152_T1_6mm_gray.nii.gz")
-    ) as f:
-        out = f
-    return out
 
 
 def get_power2011_coordinates() -> pl.DataFrame:
@@ -121,3 +119,132 @@ def get_cat_batch() -> Path:
     with resources.as_file(resources.files("biomarkers.data").joinpath("batch.m")) as f:
         mpfc = f
     return mpfc
+
+
+def get_baliki_lut() -> pl.DataFrame:
+    with resources.as_file(
+        resources.files("biomarkers.data").joinpath("baliki.csv")
+    ) as f:
+        coordinates = pl.read_csv(f)
+    return coordinates
+
+
+def get_coordinates_power2011() -> pl.DataFrame:
+    """Return dataframe volumetric atlas from Power et al. 2011 (https://doi.org/10.1016/j.neuron.2011.09.006)
+
+    Returns:
+        dataframe of coordinates
+    """
+    with resources.as_file(
+        resources.files("biomarkers.data").joinpath("power2011.csv")
+    ) as f:
+        coordinates = pl.read_csv(f)
+
+    return coordinates
+
+
+def get_difumo_lut(dimension: DIFUMODimension) -> pl.DataFrame:
+    with resources.as_file(
+        resources.files(f"biomarkers.data.difumo_atlases.{dimension}").joinpath(
+            f"labels_{dimension}_dictionary.csv"
+        )
+    ) as f:
+        labels = pl.read_csv(f)
+
+    return labels
+
+
+def get_difumo(dimension: DIFUMODimension, resolution_mm: DIFUMOResolution) -> Labels:
+    with resources.as_file(
+        resources.files(
+            f"biomarkers.data.difumo_atlases.{dimension}.{resolution_mm}mm"
+        ).joinpath("maps.nii.gz")
+    ) as f:
+        maps = f
+    labels = get_difumo_lut(dimension=dimension).rename({"Component": "region"})
+    return Labels(labels_img=maps, labels=labels)
+
+
+def get_atlas_schaefer_2018_lut(
+    n_rois: SchaeferNROI, yeo_networks: YeoNetworks
+) -> pl.DataFrame:
+    with resources.as_file(
+        resources.files("biomarkers.data.schaefer_2018").joinpath(
+            f"Schaefer2018_{n_rois}Parcels_{yeo_networks}Networks_order.txt"
+        )
+    ) as f:
+        labels = pl.read_csv(
+            f,
+            separator="\t",
+            has_header=False,
+            new_columns=["region", "label", "r", "g", "b", "a"],
+        )
+    return labels
+
+
+def get_atlas_schaefer_2018(
+    n_rois: SchaeferNROI,
+    resolution_mm: SchaeferResolution,
+    yeo_networks: YeoNetworks,
+) -> Labels:
+    with resources.as_file(
+        resources.files("biomarkers.data.schaefer_2018").joinpath(
+            f"Schaefer2018_{n_rois}Parcels_{yeo_networks}Networks_order_FSLMNI152_{resolution_mm}mm.nii.gz"
+        ),
+    ) as f:
+        maps = f
+    labels = get_atlas_schaefer_2018_lut(n_rois=n_rois, yeo_networks=yeo_networks)
+
+    return Labels(labels_img=maps, labels=labels)
+
+
+def get_gordon_2016_lut() -> pl.DataFrame:
+    with resources.as_file(
+        resources.files("biomarkers.data.gordon_2016").joinpath("Parcels.tsv")
+    ) as f:
+        lut = pl.read_csv(f, separator="\t")
+
+    return lut
+
+
+def get_atlas_gordon_2016(
+    resolution_mm: GordonResolution, space: GordonSpace = "MNI"
+) -> Labels:
+    with resources.as_file(
+        resources.files("biomarkers.data.gordon_2016").joinpath(
+            f"Parcels_{space}_{resolution_mm}{resolution_mm}{resolution_mm}.nii.gz"
+        )
+    ) as f:
+        labels_img = f
+    labels = get_gordon_2016_lut()
+
+    return Labels(labels_img=labels_img, labels=labels)
+
+
+def get_fan_atlas_lut_file() -> Path:
+    with resources.as_file(resources.files("biomarkers.data").joinpath("fan.csv")) as f:
+        labels = f
+    return labels
+
+
+def get_fan_atlas_nii_file(resolution: FanResolution = 2) -> Path:
+    with resources.as_file(
+        resources.files("biomarkers.data").joinpath(
+            f"Fan_et_al_atlas_r279_MNI_{resolution}mm.nii.gz"
+        )
+    ) as f:
+        atlas = f
+    return atlas
+
+
+def get_fan_atlas_lut() -> pl.DataFrame:
+    f = get_fan_atlas_lut_file()
+    labels = pl.read_csv(f)
+    return labels
+
+
+def get_fan_atlas(resolution: FanResolution = 2) -> Labels:
+    """Return file from ToPS model (https://doi.org/10.1038/s41591-020-1142-7)"""
+    atlas = get_fan_atlas_nii_file(resolution=resolution)
+    labels = get_fan_atlas_lut()
+    return Labels(labels_img=atlas, labels=labels)

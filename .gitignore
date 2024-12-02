@@ -151,7 +151,10 @@ cython_debug/
 #  option (not recommended) you can uncomment the following to ignore the entire idea folder.
 #.idea/
 
-*nii.gz
+src/biomarkers/data/2013_Wager_NEJM_NPS/
+src/biomarkers/data/2017_Woo_SIIPS1/
+tools/*nii.gz
+src/biomarkers/data/MNI152_T1_6mm_gray.nii.gz
 
 # for now, until the tests are developed
 tests/data
