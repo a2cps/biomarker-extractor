@@ -226,7 +226,7 @@ def clean_img(
         standardize=standardize,
         detrend=False,
         mask_img=mask,
-        clean__extrapolate=False,
+        kwargs={"clean__extrapolate": False},
     )  # type: ignore
 
     if fwhm:
