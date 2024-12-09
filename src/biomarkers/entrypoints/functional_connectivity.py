@@ -4,7 +4,6 @@ from pathlib import Path
 from biomarkers import imgs
 from biomarkers.entrypoints import tapismpi
 from biomarkers.flows import functional_connectivity
-from biomarkers.models import fmriprep
 
 
 class FunctionalConnectivityEntrypoint(tapismpi.TapisMPIEntrypoint):
@@ -14,7 +13,6 @@ class FunctionalConnectivityEntrypoint(tapismpi.TapisMPIEntrypoint):
     detrend: bool = True
     fwhm: float | None = None
     winsorize: bool = True
-    space: fmriprep.SPACE = "MNI152NLin6Asym"
     compcor_label: imgs.COMPCOR_LABEL | None = None
 
     def check_outputs(self, output_dir_to_check: Path) -> bool:
@@ -36,7 +34,6 @@ class FunctionalConnectivityEntrypoint(tapismpi.TapisMPIEntrypoint):
             detrend=self.detrend,
             fwhm=self.fwhm,
             winsorize=self.winsorize,
-            space=self.space,
             compcor_label=self.compcor_label,
         )
         logging.info("done")

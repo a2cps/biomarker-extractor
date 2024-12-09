@@ -109,11 +109,13 @@ class PostProcessRunFlow(pydantic.BaseModel):
     estimators: dict[str, type[covariance.EmpiricalCovariance]] = pydantic.Field(
         default_factory=_get_estimators
     )
-    coordinates: dict[str, dict[int, fnc_models.Coordinate]] = pydantic.Field(
+    coordinates: dict[str, dict[int, fnc_models.Coordinate]] | None = pydantic.Field(
         default_factory=_get_coordinates
     )
-    maps: dict[str, datasets.Labels] = pydantic.Field(default_factory=_get_maps)
-    labels: dict[str, datasets.Labels] = pydantic.Field(default_factory=_get_labels)
+    maps: dict[str, datasets.Labels] | None = pydantic.Field(default_factory=_get_maps)
+    labels: dict[str, datasets.Labels] | None = pydantic.Field(
+        default_factory=_get_labels
+    )
 
     def run(self):
         self.process_flow.clean()
@@ -124,7 +126,6 @@ class PostProcessRunFlow(pydantic.BaseModel):
             / f"ses={self.process_flow.ses}"
             / f"task={self.process_flow.task}"
             / f"run={self.process_flow.run}"
-            / f"space={self.process_flow.space}"
         )
 
         with tempfile.TemporaryDirectory() as tmpd_:
@@ -135,57 +136,62 @@ class PostProcessRunFlow(pydantic.BaseModel):
                 / f"ses={self.process_flow.ses}"
                 / f"task={self.process_flow.task}"
                 / f"run={self.process_flow.run}"
-                / f"space={self.process_flow.space}"
             )
-            for atlas, label in self.labels.items():
-                timeseries = get_labels_timeseries(
-                    space_d_timeseries / f"atlas={atlas}" / "part-0.parquet",
-                    img=self.process_flow.cleaned,
-                    labels=label,
-                    mask_img=self.process_flow.mask,
-                )
-                for e, estimator in self.estimators.items():
-                    get_labels_connectivity(
-                        space_d
+            if self.labels is not None:
+                for atlas, label in self.labels.items():
+                    timeseries = get_labels_timeseries(
+                        space_d_timeseries / f"atlas={atlas}" / "part-0.parquet",
+                        img=self.process_flow.cleaned,
+                        labels=label,
+                        mask_img=self.process_flow.mask,
+                    )
+                    for e, estimator in self.estimators.items():
+                        get_labels_connectivity(
+                            space_d
+                            / f"atlas={atlas}"
+                            / f"estimator={e}"
+                            / "part-0.parquet",
+                            src=timeseries,
+                            estimator=estimator,
+                        )
+
+            if self.maps is not None:
+                for atlas, m in self.maps.items():
+                    timeseries = get_maps_timeseries(
+                        space_d_timeseries
                         / f"atlas={atlas}"
                         / f"estimator={e}"
                         / "part-0.parquet",
-                        src=timeseries,
-                        estimator=estimator,
+                        img=self.process_flow.cleaned,
+                        maps=m,
+                        mask_img=self.process_flow.mask,
                     )
+                    for e, estimator in self.estimators.items():
+                        get_maps_connectivity(
+                            space_d
+                            / f"atlas={atlas}"
+                            / f"estimator={e}"
+                            / "part-0.parquet",
+                            src=timeseries,
+                            estimator=estimator,
+                        )
 
-            for atlas, m in self.maps.items():
-                timeseries = get_maps_timeseries(
-                    space_d_timeseries
-                    / f"atlas={atlas}"
-                    / f"estimator={e}"
-                    / "part-0.parquet",
-                    img=self.process_flow.cleaned,
-                    maps=m,
-                    mask_img=self.process_flow.mask,
-                )
-                for e, estimator in self.estimators.items():
-                    get_maps_connectivity(
-                        space_d
-                        / f"atlas={atlas}"
-                        / f"estimator={e}"
-                        / "part-0.parquet",
-                        src=timeseries,
-                        estimator=estimator,
+            if self.coordinates is not None:
+                for key, value in self.coordinates.items():
+                    timeseries = get_coordinates_timeseries(
+                        space_d_timeseries / f"atlas={key}" / "part-0.parquet",
+                        img=self.process_flow.cleaned,
+                        coordinates=value,
                     )
-
-            for key, value in self.coordinates.items():
-                timeseries = get_coordinates_timeseries(
-                    space_d_timeseries / f"atlas={key}" / "part-0.parquet",
-                    img=self.process_flow.cleaned,
-                    coordinates=value,
-                )
-                for e, estimator in self.estimators.items():
-                    get_coordinates_connectivity(
-                        space_d / f"atlas={key}" / f"estimator={e}" / "part-0.parquet",
-                        src=timeseries,
-                        estimator=estimator,
-                    )
+                    for e, estimator in self.estimators.items():
+                        get_coordinates_connectivity(
+                            space_d
+                            / f"atlas={key}"
+                            / f"estimator={e}"
+                            / "part-0.parquet",
+                            src=timeseries,
+                            estimator=estimator,
+                        )
 
             utils.write_parquet(
                 pl.read_parquet(tmpd_connectivity),
