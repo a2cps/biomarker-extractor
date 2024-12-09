@@ -157,10 +157,7 @@ class PostProcessRunFlow(pydantic.BaseModel):
             if self.maps is not None:
                 for atlas, m in self.maps.items():
                     timeseries = get_maps_timeseries(
-                        space_d_timeseries
-                        / f"atlas={atlas}"
-                        / f"estimator={e}"
-                        / "part-0.parquet",
+                        space_d_timeseries / f"atlas={atlas}" / "part-0.parquet",
                         img=self.process_flow.cleaned,
                         maps=m,
                         mask_img=self.process_flow.mask,
