@@ -85,7 +85,6 @@ def _get_estimators() -> dict[str, type[covariance.EmpiricalCovariance]]:
     return {
         "empirical": covariance.EmpiricalCovariance,
         "leodit_wolf": covariance.LedoitWolf,
-        "minimum_covariance_determinant": covariance.MinCovDet,
     }
 
 
