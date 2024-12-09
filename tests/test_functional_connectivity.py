@@ -30,7 +30,10 @@ def test_fnc_model_quick(tmp_path: Path):
         coordinates={"dmn": functional_connectivity.get_baliki_coordinates()},
     ).run()
 
-    exists = [(tmp_path / d).exists() for d in ("connectivity", "cleaned", "confounds")]
+    exists = [
+        (tmp_path / d).exists()
+        for d in ("connectivity", "cleaned", "confounds", "timeseries")
+    ]
     assert all(exists)
 
 
@@ -39,8 +42,11 @@ def test_fnc_flow(tmp_path: Path):
         Path("/Users/psadil/git/a2cps/biomarkers/tests/data/fmriprep"),
         out=tmp_path,
         space="MNI152NLin6Asym",
-        n_non_steady_state_tr=400,
+        n_non_steady_state_tr=15,
     )
 
-    exists = [(tmp_path / d).exists() for d in ("connectivity", "cleaned", "confounds")]
+    exists = [
+        (tmp_path / d).exists()
+        for d in ("connectivity", "cleaned", "confounds", "timeseries")
+    ]
     assert all(exists)

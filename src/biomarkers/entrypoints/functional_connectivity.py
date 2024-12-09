@@ -14,14 +14,14 @@ class FunctionalConnectivityEntrypoint(tapismpi.TapisMPIEntrypoint):
     detrend: bool = True
     fwhm: float | None = None
     winsorize: bool = True
-    space: fmriprep.SPACE = "MNI152NLin2009cAsym"
+    space: fmriprep.SPACE = "MNI152NLin6Asym"
     compcor_label: imgs.COMPCOR_LABEL | None = None
 
     def check_outputs(self, output_dir_to_check: Path) -> bool:
         return all(
             [
                 (output_dir_to_check / d).exists()
-                for d in ("connectivity", "cleaned", "confounds")
+                for d in ("connectivity", "cleaned", "confounds", "timeseries")
             ]
         )
 

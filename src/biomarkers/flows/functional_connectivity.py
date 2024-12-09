@@ -11,7 +11,7 @@ def connectivity_flow(
     high_pass: float | None = None,
     low_pass: float | None = 0.1,
     n_non_steady_state_tr: int = 15,
-    space: fmriprep.SPACE = "MNI152NLin2009cAsym",
+    space: fmriprep.SPACE = "MNI152NLin6Asym",
     detrend: bool = False,
     fwhm: float | None = None,
     winsorize: bool = True,

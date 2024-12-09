@@ -89,6 +89,21 @@ def _get_estimators() -> dict[str, type[covariance.EmpiricalCovariance]]:
     }
 
 
+def read_timeseries(src: Path) -> pl.DataFrame:
+    return pl.read_parquet(src).pivot(index="t", on="region").drop("t")
+
+
+def unpivot_timeseries_to_df(
+    time_series: np.ndarray, regions: typing.Sequence[str]
+) -> pl.DataFrame:
+    return (
+        pl.DataFrame({region: time_series[:, r] for r, region in enumerate(regions)})
+        .with_row_index(name="t")
+        .unpivot(index="t", variable_name="region")
+        .with_columns(pl.col("region").cast(pl.UInt16))
+    )
+
+
 class PostProcessRunFlow(pydantic.BaseModel):
     process_flow: postprocess.PostProcessRunFlow
     estimators: dict[str, type[covariance.EmpiricalCovariance]] = pydantic.Field(
@@ -102,53 +117,78 @@ class PostProcessRunFlow(pydantic.BaseModel):
 
     def run(self):
         self.process_flow.clean()
+        space_d_timeseries = (
+            self.process_flow.dst
+            / "timeseries"
+            / f"sub={self.process_flow.sub}"
+            / f"ses={self.process_flow.ses}"
+            / f"task={self.process_flow.task}"
+            / f"run={self.process_flow.run}"
+            / f"space={self.process_flow.space}"
+        )
 
         with tempfile.TemporaryDirectory() as tmpd_:
-            tmpd = Path(tmpd_) / "connectivity"
+            tmpd_connectivity = Path(tmpd_) / "connectivity"
             space_d = (
-                tmpd
+                tmpd_connectivity
                 / f"sub={self.process_flow.sub}"
                 / f"ses={self.process_flow.ses}"
                 / f"task={self.process_flow.task}"
                 / f"run={self.process_flow.run}"
                 / f"space={self.process_flow.space}"
             )
-
-            for e, estimator in self.estimators.items():
-                for atlas, label in self.labels.items():
+            for atlas, label in self.labels.items():
+                timeseries = get_labels_timeseries(
+                    space_d_timeseries / f"atlas={atlas}" / "part-0.parquet",
+                    img=self.process_flow.cleaned,
+                    labels=label,
+                    mask_img=self.process_flow.mask,
+                )
+                for e, estimator in self.estimators.items():
                     get_labels_connectivity(
                         space_d
                         / f"atlas={atlas}"
                         / f"estimator={e}"
                         / "part-0.parquet",
-                        img=self.process_flow.cleaned,
-                        labels=label,
+                        src=timeseries,
                         estimator=estimator,
-                        mask_img=self.process_flow.mask,
                     )
 
-                for atlas, m in self.maps.items():
+            for atlas, m in self.maps.items():
+                timeseries = get_maps_timeseries(
+                    space_d_timeseries
+                    / f"atlas={atlas}"
+                    / f"estimator={e}"
+                    / "part-0.parquet",
+                    img=self.process_flow.cleaned,
+                    maps=m,
+                    mask_img=self.process_flow.mask,
+                )
+                for e, estimator in self.estimators.items():
                     get_maps_connectivity(
                         space_d
                         / f"atlas={atlas}"
                         / f"estimator={e}"
                         / "part-0.parquet",
-                        img=self.process_flow.cleaned,
-                        maps=m,
+                        src=timeseries,
                         estimator=estimator,
-                        mask_img=self.process_flow.mask,
                     )
 
-                for key, value in self.coordinates.items():
+            for key, value in self.coordinates.items():
+                timeseries = get_coordinates_timeseries(
+                    space_d_timeseries / f"atlas={key}" / "part-0.parquet",
+                    img=self.process_flow.cleaned,
+                    coordinates=value,
+                )
+                for e, estimator in self.estimators.items():
                     get_coordinates_connectivity(
                         space_d / f"atlas={key}" / f"estimator={e}" / "part-0.parquet",
-                        img=self.process_flow.cleaned,
-                        coordinates=value,
+                        src=timeseries,
                         estimator=estimator,
                     )
 
             utils.write_parquet(
-                pl.read_parquet(tmpd),
+                pl.read_parquet(tmpd_connectivity),
                 self.process_flow.dst
                 / "connectivity"
                 / f"sub={self.process_flow.sub}"
@@ -179,54 +219,56 @@ def get_power_coordinates() -> dict[int, fnc_models.Coordinate]:
 
 
 def do_connectivity(
-    time_series: np.ndarray,
-    labels: typing.Sequence[int],
-    estimator: type[covariance.EmpiricalCovariance],
+    time_series: pl.DataFrame, estimator: type[covariance.EmpiricalCovariance]
 ) -> pl.DataFrame:
     connectivity_measure = ConnectivityMeasure(
         cov_estimator=estimator(store_precision=False),  # type: ignore
         kind="correlation",
         standardize="zscore_sample",  # type: ignore
     )
-    correlation_matrix = connectivity_measure.fit_transform([time_series])
+    correlation_matrix = connectivity_measure.fit_transform([time_series.to_numpy()])
     if not isinstance(correlation_matrix, np.ndarray):
         msg = f"Unexpected {type(correlation_matrix)=}"
         raise RuntimeError(msg)
 
     # need squeeze because the first axis corresponds to subs, which is
     # in this case always length 1. We get a 2d array.
-    return utils.mat_to_df(correlation_matrix.squeeze(), labels=labels)
+    return utils.mat_to_df(
+        correlation_matrix.squeeze(), labels=[int(c) for c in time_series.columns]
+    )
 
 
 @utils.cache_dataframe
-def get_coordinates_connectivity(
+def get_coordinates_timeseries(
     img: Path,
     coordinates: dict[int, fnc_models.Coordinate],
-    estimator: type[covariance.EmpiricalCovariance],
     radius: int = 5,  # " ... defined as 10-mm spheres centered ..."
 ) -> pl.DataFrame:
     # we do not include a mask because many of the images
     # had only a partial FOV, and NiftiSpheresMasker raises
     # an error when including a seed that is outside the mask
-    masker = maskers.NiftiSpheresMasker(
-        seeds=coordinates.values(), radius=radius, standardize=False, detrend=False
-    )
+    masker = maskers.NiftiSpheresMasker(seeds=coordinates.values(), radius=radius)
     time_series = masker.fit_transform(img)
     if not isinstance(time_series, np.ndarray):
         msg = f"Unexpected {type(time_series)=}"
         raise RuntimeError(msg)
 
-    return do_connectivity(
-        time_series=time_series, labels=tuple(coordinates.keys()), estimator=estimator
-    )
+    return unpivot_timeseries_to_df(time_series, [str(k) for k in coordinates.keys()])
 
 
 @utils.cache_dataframe
-def get_maps_connectivity(
-    img: Path,
-    maps: datasets.Labels,
+def get_coordinates_connectivity(
+    src: Path,
     estimator: type[covariance.EmpiricalCovariance],
-    mask_img: Path | None = None,
+) -> pl.DataFrame:
+    time_series = read_timeseries(src)
+
+    return do_connectivity(time_series=time_series, estimator=estimator)
+
+
+@utils.cache_dataframe
+def get_maps_timeseries(
+    img: Path, maps: datasets.Labels, mask_img: Path | None = None
 ) -> pl.DataFrame:
     masker = maskers.NiftiMapsMasker(
         maps_img=maps.labels_img,
@@ -240,19 +282,28 @@ def get_maps_connectivity(
         msg = f"Unexpected {type(time_series)=}"
         raise RuntimeError(msg)
 
-    return do_connectivity(
-        time_series=time_series,
-        labels=maps.labels.select("region").to_series().to_list(),
-        estimator=estimator,
+    return unpivot_timeseries_to_df(
+        time_series,
+        maps.labels.select("region")
+        .with_columns(region=pl.col("region").cast(pl.Utf8()))
+        .to_series()
+        .sort()
+        .to_list(),
     )
 
 
 @utils.cache_dataframe
-def get_labels_connectivity(
-    img: Path,
-    labels: datasets.Labels,
-    estimator: type[covariance.EmpiricalCovariance],
-    mask_img: Path | None = None,
+def get_maps_connectivity(
+    src: Path, estimator: type[covariance.EmpiricalCovariance]
+) -> pl.DataFrame:
+    time_series = read_timeseries(src)
+
+    return do_connectivity(time_series=time_series, estimator=estimator)
+
+
+@utils.cache_dataframe
+def get_labels_timeseries(
+    img: Path, labels: datasets.Labels, mask_img: Path | None = None
 ) -> pl.DataFrame:
     masker = maskers.NiftiLabelsMasker(
         labels_img=labels.labels_img,
@@ -269,11 +320,23 @@ def get_labels_connectivity(
         msg = f"Unexpected {type(time_series)=}"
         raise RuntimeError(msg)
 
-    return do_connectivity(
-        time_series=time_series,
-        labels=labels_lookup["region"].to_list(),
-        estimator=estimator,
+    return unpivot_timeseries_to_df(
+        time_series,
+        labels_lookup.select("region")
+        .with_columns(region=pl.col("region").cast(pl.Utf8()))
+        .to_series()
+        .sort()
+        .to_list(),
     )
+
+
+@utils.cache_dataframe
+def get_labels_connectivity(
+    src: Path, estimator: type[covariance.EmpiricalCovariance]
+) -> pl.DataFrame:
+    time_series = read_timeseries(src)
+
+    return do_connectivity(time_series=time_series, estimator=estimator)
 
 
 def _update_labels(
