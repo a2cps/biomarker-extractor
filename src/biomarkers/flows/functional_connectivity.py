@@ -8,7 +8,7 @@ def connectivity_flow(
     subdir: Path,
     out: Path,
     compcor_label: imgs.COMPCOR_LABEL | None = None,
-    high_pass: float | None = None,
+    high_pass: float | None = 0.01,
     low_pass: float | None = 0.1,
     n_non_steady_state_tr: int = 15,
     detrend: bool = False,

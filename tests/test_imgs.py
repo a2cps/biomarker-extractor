@@ -2,6 +2,7 @@ from pathlib import Path
 
 import nibabel as nb
 import numpy as np
+import polars as pl
 import pytest
 from nilearn import datasets
 
@@ -35,23 +36,51 @@ data_dir, _ = datasets.fetch_openneuro_dataset(urls=urls)
 i = Path(data_dir) / "sub-10159" / "func" / "sub-10159_task-stopsignal_bold.nii.gz"
 
 
-def test_winsorize_wo_mask_warns():
-    with pytest.warns(RuntimeWarning):
-        assert imgs.winsorize(img=nb.nifti1.load(i))  # type:ignore
-
-
-@pytest.mark.filterwarnings("ignore:invalid value encountered in divide")
-@pytest.mark.parametrize("use_mask", [True, False])
-def test_winsorize(tmp_path: Path, use_mask: bool):
-    img: nb.nifti1.Nifti1Image = nb.nifti1.load(i)  # type:ignore
-    if use_mask:
-        mask = tmp_path / "mask.nii.gz"
-        nb.nifti1.Nifti1Image(
-            np.asarray(img.get_fdata().std(axis=-1, ddof=1) > 0, dtype=np.uint8),
-            affine=img.affine,
-        ).to_filename(mask)
+def make_mask(img: nb.nifti1.Nifti1Image | Path, tmp_path: Path) -> Path:
+    mask = tmp_path / "mask.nii.gz"
+    if isinstance(img, Path):
+        i = nb.nifti1.load(img)
     else:
-        mask = None
+        i = img
+    nb.nifti1.Nifti1Image(
+        np.asarray(i.get_fdata().std(axis=-1, ddof=1) > 0, dtype=np.uint8),
+        affine=i.affine,
+    ).to_filename(mask)
+    return mask
 
-    n = imgs.winsorize(img=img, mask=mask)
+
+def test_winsorize():
+    img: nb.nifti1.Nifti1Image = nb.nifti1.Nifti1Image.load(i)
+    n = imgs.winsorize(img=img)
     assert isinstance(n, nb.nifti1.Nifti1Image)
+
+
+@pytest.mark.filterwarnings("error")
+def test_clean_img_no_future_warnings(tmp_path: Path):
+    out = tmp_path / "cleaned.nii.gz"
+    confounds = tmp_path / "confounds.parquet"
+    img = nb.nifti1.Nifti1Image.load(i)
+    pl.DataFrame({"x": np.random.normal(size=(img.shape[-1],))}).write_parquet(
+        confounds
+    )
+    mask = make_mask(i, tmp_path)
+    # signals = masking.apply_mask(img, mask)
+    # signal.clean(
+    #     signals,
+    #     detrend=False,
+    #     standardize="zscore_sample",
+    #     standardize_confounds="zscore_sample",  # type: ignore
+    #     confounds=pl.read_parquet(confounds).to_numpy(),
+    #     low_pass=0.1,
+    #     high_pass=0.01,
+    #     t_r=utils.get_tr(img),
+    # )
+    n = imgs.clean_img(
+        out,
+        img=i,
+        mask=mask,
+        low_pass=0.1,
+        high_pass=0.01,
+        confounds_file=confounds,
+    )
+    assert n.exists()

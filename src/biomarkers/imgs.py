@@ -211,7 +211,7 @@ def clean_img(
     if do_detrend:
         nii = detrend(nii, mask=mask)
     if do_winsorize:
-        nii = winsorize(nii, mask=mask)
+        nii = winsorize(nii)
     if to_percentchange:
         nii = to_local_percent_change(nii)
 
@@ -225,7 +225,8 @@ def clean_img(
         standardize=standardize,
         detrend=False,
         mask_img=mask,
-        kwargs={"clean__extrapolate": False},
+        clean__extrapolate=False,
+        clean__standardize_confounds="zscore_sample",
     )  # type: ignore
 
     if fwhm:
@@ -252,16 +253,11 @@ def to_local_percent_change(
     return nb.nifti1.Nifti1Image(dataobj=pc, affine=img.affine, header=img.header)
 
 
-def winsorize(
-    img: nb.nifti1.Nifti1Image, mask: Path | None = None, std: float = 3
-) -> nb.nifti1.Nifti1Image:
+def winsorize(img: nb.nifti1.Nifti1Image, std: float = 3) -> nb.nifti1.Nifti1Image:
     ms = img.get_fdata().mean(axis=-1, keepdims=True)
     stds = img.get_fdata().std(axis=-1, ddof=1, keepdims=True)
 
-    if mask:
-        where = np.expand_dims(nb.nifti1.load(mask).get_fdata() > 0, axis=-1)
-    else:
-        where = np.ones_like(img.get_fdata()) > 0
+    where = np.asarray(stds > 0, dtype=np.bool)
     Z = img.get_fdata() - ms
     np.divide(Z, stds, out=Z, where=where)
     Z[np.logical_not(where.squeeze())] = 0

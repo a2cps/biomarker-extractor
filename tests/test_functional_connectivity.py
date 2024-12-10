@@ -41,7 +41,6 @@ def test_fnc_flow(tmp_path: Path):
     fnc_flow.connectivity_flow(
         Path("/Users/psadil/git/a2cps/biomarkers/tests/data/fmriprep"),
         out=tmp_path,
-        space="MNI152NLin6Asym",
         n_non_steady_state_tr=15,
     )
 
