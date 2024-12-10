@@ -38,9 +38,9 @@ def test_get_siips(weight):
     assert all(check_is_file_exists(mask))
 
 
-@pytest.mark.parametrize("mm", [("2mm"), ("3mm")])
-def test_fan_atlas(mm: datasets.FAN_RESOLUTION):
-    mask = datasets.get_fan_atlas_file(mm)
+@pytest.mark.parametrize("mm", [(2), (3)])
+def test_fan_atlas(mm: datasets.FanResolution):
+    mask = datasets.get_fan_atlas_nii_file(mm)
     assert all(check_is_file_exists(mask))
 
 

@@ -28,8 +28,8 @@ class SignatureEntrypoint(tapismpi.TapisMPIEntrypoint):
                     "signatures-by-part",
                     "signatures-by-run",
                     "signatures-by-tr",
-                    "signatures-cleaned",
-                    "signatures-confounds",
+                    "cleaned",
+                    "confounds",
                 )
             ]
         )

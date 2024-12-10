@@ -139,24 +139,6 @@ def cache_dataframe(
     return wrapper
 
 
-def mat_to_df(cormat: np.ndarray, labels: typing.Iterable[str]) -> pd.DataFrame:
-    source = []
-    target = []
-    connectivity = []
-    for xi, x in enumerate(labels):
-        for yi, y in enumerate(labels):
-            if yi <= xi:
-                continue
-            else:
-                source.append(x)
-                target.append(y)
-                connectivity.append(cormat[xi, yi])
-
-    return pd.DataFrame.from_dict(
-        {"source": source, "target": target, "connectivity": connectivity}
-    )
-
-
 def mkdir_recursive(p: Path, mode: int = DIR_PERMISSIONS) -> None:
     for parent in reversed(p.parents):
         if not parent.exists():
@@ -295,4 +277,22 @@ def check_matching_image_shapes(imgs: typing.Sequence[Path]) -> bool:
             np.allclose(x.shape, y.shape)
             for x, y in zip(loaded_imgs[:-1], loaded_imgs[1:])
         ]
+    )
+
+
+def mat_to_df(cormat: np.ndarray, labels: typing.Sequence[int]) -> pl.DataFrame:
+    source = []
+    target = []
+    connectivity = []
+    for xi, x in enumerate(labels):
+        for yi, y in enumerate(labels):
+            if yi <= xi:
+                continue
+            else:
+                source.append(x)
+                target.append(y)
+                connectivity.append(cormat[xi, yi])
+
+    return pl.DataFrame(
+        {"source": source, "target": target, "connectivity": connectivity}
     )
