@@ -25,6 +25,7 @@ build-backend = "hatchling.build"
 testpaths = ["tests"]
 markers = ["mpi: tests that require mpirun"]
 asyncio_default_fixture_loop_scope = "function"
+filterwarnings = ["ignore:Development of the BIDSLayout:UserWarning"]
 
 [tool.uv]
 dev-dependencies = [
