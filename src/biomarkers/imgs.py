@@ -259,11 +259,12 @@ def winsorize(
     stds = img.get_fdata().std(axis=-1, ddof=1, keepdims=True)
 
     if mask:
-        where = nb.nifti1.load(mask).get_fdata() > 0
+        where = np.expand_dims(nb.nifti1.load(mask).get_fdata() > 0, axis=-1)
     else:
-        where = np.ones_like(stds) > 0
-    Z = np.zeros_like(img.get_fdata())
-    np.divide(img.get_fdata() - ms, stds, out=Z, where=where)
+        where = np.ones_like(img.get_fdata()) > 0
+    Z = img.get_fdata() - ms
+    np.divide(Z, stds, out=Z, where=where)
+    Z[np.logical_not(where.squeeze())] = 0
     Z = np.abs(Z)
 
     replacements = ms + std * stds * np.sign(img.get_fdata() - ms)

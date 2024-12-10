@@ -37,17 +37,21 @@ i = Path(data_dir) / "sub-10159" / "func" / "sub-10159_task-stopsignal_bold.nii.
 
 def test_winsorize_wo_mask_warns():
     with pytest.warns(RuntimeWarning):
-        imgs.winsorize(nb.nifti1.load(i))  # type: ignore
+        assert imgs.winsorize(img=nb.nifti1.load(i))  # type:ignore
 
 
-def test_winsorize(tmp_path: Path):
-    mask = tmp_path / "mask.nii.gz"
+@pytest.mark.filterwarnings("ignore:invalid value encountered in divide")
+@pytest.mark.parametrize("use_mask", [True, False])
+def test_winsorize(tmp_path: Path, use_mask: bool):
     img: nb.nifti1.Nifti1Image = nb.nifti1.load(i)  # type:ignore
-    nb.nifti1.Nifti1Image(
-        np.asarray(
-            img.get_fdata().std(axis=-1, ddof=1, keepdims=True) > 0, dtype=np.uint8
-        ),
-        affine=img.affine,
-    ).to_filename(mask)
+    if use_mask:
+        mask = tmp_path / "mask.nii.gz"
+        nb.nifti1.Nifti1Image(
+            np.asarray(img.get_fdata().std(axis=-1, ddof=1) > 0, dtype=np.uint8),
+            affine=img.affine,
+        ).to_filename(mask)
+    else:
+        mask = None
 
-    imgs.winsorize(img=img, mask=mask)
+    n = imgs.winsorize(img=img, mask=mask)
+    assert isinstance(n, nb.nifti1.Nifti1Image)
