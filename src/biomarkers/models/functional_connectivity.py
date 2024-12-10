@@ -190,7 +190,7 @@ class PostProcessRunFlow(pydantic.BaseModel):
                         )
 
             utils.write_parquet(
-                pl.read_parquet(tmpd_connectivity),
+                pl.read_parquet(space_d),
                 self.process_flow.dst
                 / "connectivity"
                 / f"sub={self.process_flow.sub}"

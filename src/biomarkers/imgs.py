@@ -1,4 +1,3 @@
-import logging
 import tempfile
 import typing
 from pathlib import Path
@@ -212,7 +211,7 @@ def clean_img(
     if do_detrend:
         nii = detrend(nii, mask=mask)
     if do_winsorize:
-        nii = winsorize(nii)
+        nii = winsorize(nii, mask=mask)
     if to_percentchange:
         nii = to_local_percent_change(nii)
 
@@ -253,23 +252,23 @@ def to_local_percent_change(
     return nb.nifti1.Nifti1Image(dataobj=pc, affine=img.affine, header=img.header)
 
 
-def winsorize(img: nb.nifti1.Nifti1Image, std: float = 3) -> nb.nifti1.Nifti1Image:
-    # from scipy.stats import mstats
-    # from scipy import stats
-
+def winsorize(
+    img: nb.nifti1.Nifti1Image, mask: Path | None = None, std: float = 3
+) -> nb.nifti1.Nifti1Image:
     ms = img.get_fdata().mean(axis=-1, keepdims=True)
     stds = img.get_fdata().std(axis=-1, ddof=1, keepdims=True)
 
-    Z = np.abs((img.get_fdata() - ms) / stds)
-    # Z = np.abs(stats.zscore(img.get_fdata(), axis=-1, ddof=1))
-    if (Z > std).mean() > 0.01:
-        logging.warning("We're removing more than 1% of values!")
+    if mask:
+        where = np.expand_dims((nb.nifti1.load(mask).get_fdata() > 0), axis=-1)
+    else:
+        where = np.ones_like(stds)
+    Z = np.zeros_like(stds)
+    np.divide(img.get_fdata() - ms, stds, out=Z, where=where)
+    Z = np.abs(Z)
 
     replacements = ms + std * stds * np.sign(img.get_fdata() - ms)
     winsorized = img.get_fdata().copy()
     winsorized[Z > std] = replacements[Z > std]
-
-    # winsorized = mstats.winsorize(img.get_fdata(), limits=[lower, upper], axis=-1)
 
     return nb.nifti1.Nifti1Image(
         dataobj=winsorized, affine=img.affine, header=img.header
