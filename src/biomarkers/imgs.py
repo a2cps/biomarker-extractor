@@ -61,13 +61,15 @@ class CompCor(pydantic.BaseModel):
             X,
             detrend=False,
             standardize="zscore_sample",
+            standardize_confounds="zscore_sample",  # type:ignore
             high_pass=self.high_pass,
             low_pass=self.low_pass,
             t_r=tr,
             sample_mask=utils.exclude_to_index(
                 n_non_steady_state_tr=self.n_non_steady_state_tr, n_tr=X.shape[0]
             ),
-        )  # type: ignore
+            extrapolate=False,
+        )
         del X
 
         # compcor works on PCA of MM^T
