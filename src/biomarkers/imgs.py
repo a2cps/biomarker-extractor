@@ -1,4 +1,3 @@
-import logging
 import tempfile
 import typing
 from pathlib import Path
@@ -62,13 +61,15 @@ class CompCor(pydantic.BaseModel):
             X,
             detrend=False,
             standardize="zscore_sample",
+            standardize_confounds="zscore_sample",  # type:ignore
             high_pass=self.high_pass,
             low_pass=self.low_pass,
             t_r=tr,
             sample_mask=utils.exclude_to_index(
                 n_non_steady_state_tr=self.n_non_steady_state_tr, n_tr=X.shape[0]
             ),
-        )  # type: ignore
+            extrapolate=False,
+        )
         del X
 
         # compcor works on PCA of MM^T
@@ -227,6 +228,7 @@ def clean_img(
         detrend=False,
         mask_img=mask,
         clean__extrapolate=False,
+        clean__standardize_confounds="zscore_sample",
     )  # type: ignore
 
     if fwhm:
@@ -254,22 +256,18 @@ def to_local_percent_change(
 
 
 def winsorize(img: nb.nifti1.Nifti1Image, std: float = 3) -> nb.nifti1.Nifti1Image:
-    # from scipy.stats import mstats
-    # from scipy import stats
-
     ms = img.get_fdata().mean(axis=-1, keepdims=True)
     stds = img.get_fdata().std(axis=-1, ddof=1, keepdims=True)
 
-    Z = np.abs((img.get_fdata() - ms) / stds)
-    # Z = np.abs(stats.zscore(img.get_fdata(), axis=-1, ddof=1))
-    if (Z > std).mean() > 0.01:
-        logging.warning("We're removing more than 1% of values!")
+    where = np.asarray(stds > 0, dtype=np.bool)
+    Z = img.get_fdata() - ms
+    np.divide(Z, stds, out=Z, where=where)
+    Z[np.logical_not(where.squeeze())] = 0
+    Z = np.abs(Z)
 
     replacements = ms + std * stds * np.sign(img.get_fdata() - ms)
     winsorized = img.get_fdata().copy()
     winsorized[Z > std] = replacements[Z > std]
-
-    # winsorized = mstats.winsorize(img.get_fdata(), limits=[lower, upper], axis=-1)
 
     return nb.nifti1.Nifti1Image(
         dataobj=winsorized, affine=img.affine, header=img.header

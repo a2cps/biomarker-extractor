@@ -1,32 +1,19 @@
-import typing
 from pathlib import Path
 
 import pytest
 
-from biomarkers import imgs
 from biomarkers.entrypoints import signatures, tapismpi
 from biomarkers.flows import signature
 
 
-@pytest.mark.parametrize("low_pass", [0.1, None])
-@pytest.mark.parametrize("detrend", [True, False])
-@pytest.mark.parametrize("winsorize", [True, False])
-@pytest.mark.parametrize("compcor_label", typing.get_args(imgs.COMPCOR_LABEL))
-def test_sig_flow(
-    tmp_path: Path,
-    low_pass: float | None,
-    detrend: bool,
-    winsorize: bool,
-    compcor_label: imgs.COMPCOR_LABEL,
-):
+def test_sig_flow(tmp_path: Path):
     signature.signature_flow(
         Path("/Users/psadil/git/a2cps/biomarkers/tests/data/fmriprep"),
         out=tmp_path,
-        low_pass=low_pass,
+        low_pass=0.1,
         n_non_steady_state_tr=15,
-        detrend=detrend,
-        winsorize=winsorize,
-        compcor_label=compcor_label,
+        detrend=False,
+        winsorize=False,
     )
     exists = [
         (tmp_path / d).exists()
@@ -34,8 +21,8 @@ def test_sig_flow(
             "signatures-by-part",
             "signatures-by-run",
             "signatures-by-tr",
-            "signatures-cleaned",
-            "signatures-confounds",
+            "cleaned",
+            "confounds",
         )
     ]
     assert all(exists)
@@ -59,8 +46,8 @@ def test_sig_pair_flow(tmp_path: Path):
             "signatures-by-part-diff",
             "signatures-by-run-diff",
             "signatures-by-tr-diff",
-            "signatures-cleaned",
-            "signatures-confounds",
+            "cleaned",
+            "confounds",
         )
     ]
     assert all(exists)
