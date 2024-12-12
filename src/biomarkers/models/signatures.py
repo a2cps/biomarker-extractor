@@ -210,7 +210,7 @@ def sign_by_run(bold: pl.DataFrame, signatures: pl.DataFrame) -> pl.DataFrame:
 def sign_by_part(
     bold: pl.DataFrame,
     signatures: pl.DataFrame,
-    bins: tuple[float, ...] = (138.0, 300.0),
+    bins: tuple[float, ...] = (135.0, 285.0),
     bin_labels: tuple[str, ...] = ("beginning", "middle", "end"),
 ) -> pl.DataFrame:
     bo = (
