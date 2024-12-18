@@ -66,8 +66,12 @@ def img_stem(img: Path) -> str:
     return img.name.removesuffix(".gz").removesuffix(".nii")
 
 
-def exclude_to_index(n_non_steady_state_tr: int, n_tr: int) -> np.ndarray:
-    return np.array([x for x in range(n_non_steady_state_tr, n_tr)])
+def exclude_to_index(
+    n_non_steady_state_tr: int, n_tr: int
+) -> np.typing.NDArray[np.uint32]:
+    return np.array(
+        [x for x in np.arange(n_non_steady_state_tr, n_tr, dtype=np.uint32)]
+    )
 
 
 def get_tr(nii: nb.nifti1.Nifti1Image) -> float:
