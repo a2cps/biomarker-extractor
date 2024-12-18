@@ -7,6 +7,7 @@ import pytest
 from nilearn import datasets
 
 from biomarkers import imgs
+from biomarkers.models import bids
 
 _, urls = datasets.fetch_ds000030_urls()
 
@@ -84,3 +85,31 @@ def test_clean_img_no_future_warnings(tmp_path: Path):
         confounds_file=confounds,
     )
     assert n.exists()
+
+
+def test_compcor():
+    layout = bids.Layout.from_path(
+        Path("/Users/psadil/git/a2cps/biomarkers/tests/data/fmriprep")
+    )
+    filters = {
+        "sub": "travel2",
+        "space": "MNI152NLin6Asym",
+        "res": "2",
+    }
+    task_filters = {
+        "task": "rest",
+        "run": "1",
+        **filters,
+    }
+    compcor = imgs.CompCor(
+        img=layout.get_preproc(task_filters),
+        probseg=bids.ProbSeg.from_layout(layout, filters),
+        label="WM+CSF",
+        boldref=layout.get_boldref({"suffix": "boldref", **task_filters}),
+        high_pass=0.01,
+        low_pass=0.1,
+        n_non_steady_state_tr=15,
+        detrend=True,
+    ).fit_transform()
+
+    assert compcor.drop_nulls().shape[0] > 0

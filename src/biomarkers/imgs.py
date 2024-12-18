@@ -57,6 +57,9 @@ class CompCor(pydantic.BaseModel):
             X = _detrend(X)
 
         tr = utils.get_tr(nb.nifti1.Nifti1Image.load(self.img))
+        sample_mask = utils.exclude_to_index(
+            n_non_steady_state_tr=self.n_non_steady_state_tr, n_tr=X.shape[0]
+        )
         X_cleaned: np.ndarray = signal.clean(
             X,
             detrend=False,
@@ -65,29 +68,17 @@ class CompCor(pydantic.BaseModel):
             high_pass=self.high_pass,
             low_pass=self.low_pass,
             t_r=tr,
-            sample_mask=utils.exclude_to_index(
-                n_non_steady_state_tr=self.n_non_steady_state_tr, n_tr=X.shape[0]
-            ),
+            sample_mask=sample_mask,
             extrapolate=False,
         )
         del X
 
         # compcor works on PCA of MM^T
-        return self.comp_cor(X=X_cleaned.T)
+        return self.comp_cor(X=X_cleaned.T, t_index=sample_mask)
 
-    def comp_cor(self, X: np.ndarray) -> pl.DataFrame:
-        """_summary_
-
-        Args:
-            X (np.ndarray): (n_samples, n_features) should already be cleaned. Samples are voxels and features are volumes.
-
-        Raises:
-            AssertionError: _description_
-
-        Returns:
-            pd.DataFrame: _description_
-        """
-
+    def comp_cor(
+        self, X: np.ndarray, t_index: np.typing.NDArray[np.uint32] | None = None
+    ) -> pl.DataFrame:
         if not X.ndim == 2:
             msg = "y must be a 2D array"
             raise AssertionError(msg)
@@ -100,13 +91,15 @@ class CompCor(pydantic.BaseModel):
         # need all components for explained_variance_ratio_ to be accurate
         pca = decomposition.PCA()
         pca.fit(X)
+        d = pl.DataFrame(pca.components_.T)
+        if t_index is None:
+            d = d.with_row_index("t")
+        else:
+            d = d.with_columns(t=t_index)  # type: ignore
 
         # keep all components
-        return (
-            pl.DataFrame(pca.components_.T)
-            .with_row_index("t")
-            .unpivot(index="t", variable_name="component")
-            .with_columns(pl.col("component").str.extract(r"\d+").cast(pl.UInt16))
+        return d.unpivot(index="t", variable_name="component").with_columns(
+            pl.col("component").str.extract(r"(\d+)").cast(pl.UInt16)
         )
 
     @property
