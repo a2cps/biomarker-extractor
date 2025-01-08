@@ -47,6 +47,7 @@ def signature_flow(
                     flow = signatures.SignatureRunFlow(
                         process_flow=process_flow, all_signatures=all_signatures
                     )
+                    logging.info(f"{task=}, {run=}")
                     flow.sign_run()
                     flows[f"{task}{run}"] = flow
 
@@ -66,6 +67,7 @@ def signature_flow(
                                 f"Shapes don't match for {scans=}. Skipping"
                             )
                             continue
+                        logging.info(f"{baseline=}, {active=}")
 
                         signatures.SignatureRunPairFlow(
                             active_flow=cuff, baseline_flow=rest, scans=scans

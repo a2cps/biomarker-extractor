@@ -163,12 +163,16 @@ def make_mask(img: nb.nifti1.Nifti1Image) -> nb.nifti1.Nifti1Image:
 def from_4d_to_polars(
     img: nb.nifti1.Nifti1Image, value_name: str = "signal", dtype: str = "f"
 ) -> pl.DataFrame:
-    out = masking.apply_mask(img, make_mask(img), dtype=dtype)
-    d = (
-        pl.DataFrame(out, schema=[str(x) for x in range(out.shape[1])])
-        .with_columns(pl.Series("t", np.arange(out.shape[0], dtype=np.uint16)))
-        .unpivot(index=["t"], value_name=value_name, variable_name="voxel")
-        .with_columns(pl.col("voxel").cast(pl.UInt32()))
+    n_voxels = np.prod(img.shape[:3], dtype=int)
+    n_tr = img.shape[-1]
+    d = pl.DataFrame(
+        {
+            value_name: masking.apply_mask(img, make_mask(img), dtype=dtype).reshape(
+                -1, order="F", copy=False
+            ),
+            "t": np.tile(np.arange(n_tr, dtype=np.uint16), n_voxels),
+            "voxel": np.repeat(np.arange(n_voxels, dtype=np.uint32), n_tr),
+        }
     )
 
     return d

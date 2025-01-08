@@ -5,9 +5,8 @@ from pathlib import Path
 import nibabel as nb
 import polars as pl
 import pydantic
-from nilearn import image
 
-from biomarkers import datasets, utils
+from biomarkers import datasets, imgs, utils
 from biomarkers.models import bids, postprocess
 
 NPS: tuple[datasets.NPSWeights, ...] = typing.get_args(datasets.NPSWeights)
@@ -127,11 +126,10 @@ class SignatureRunPairFlow(pydantic.BaseModel):
     @functools.cached_property
     def bold(self) -> pl.DataFrame:
         # assuming files exist at this point
-        bold_nii: nb.nifti1.Nifti1Image = image.math_img(
-            "img1 - img2",
-            img1=self.active_flow.process_flow.cleaned,
-            img2=self.baseline_flow.process_flow.cleaned,
-        )  # type: ignore
+        bold_nii = imgs.image_difference(
+            self.active_flow.process_flow.cleaned,
+            self.baseline_flow.process_flow.cleaned,
+        )
         return bids.from_4d_to_polars(bold_nii)
 
     def get_by_path(self, root: str) -> Path:
@@ -194,7 +192,12 @@ def sign_by_t(bold: pl.DataFrame, signatures: pl.DataFrame) -> pl.DataFrame:
 
 @utils.cache_dataframe
 def sign_by_run(bold: pl.DataFrame, signatures: pl.DataFrame) -> pl.DataFrame:
-    bo = bold.group_by("voxel").agg(signal=pl.col("signal").mean())
+    mask = signatures.select("voxel").unique()
+    bo = (
+        bold.join(mask, on="voxel", how="semi")
+        .group_by("voxel")
+        .agg(signal=pl.col("signal").mean())
+    )
     return (
         bo.join(signatures, on="voxel", how="inner")
         .group_by("signature")
@@ -213,8 +216,10 @@ def sign_by_part(
     bins: tuple[float, ...] = (135.0, 285.0),
     bin_labels: tuple[str, ...] = ("beginning", "middle", "end"),
 ) -> pl.DataFrame:
+    mask = signatures.select("voxel").unique()
     bo = (
-        bold.with_columns(
+        bold.join(mask, on="voxel", how="semi")
+        .with_columns(
             pl.col("t").cut(breaks=list(bins), labels=list(bin_labels)).alias("part")
         )
         .group_by("voxel", "part")

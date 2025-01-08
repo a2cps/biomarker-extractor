@@ -68,7 +68,7 @@ class CompCor(pydantic.BaseModel):
             high_pass=self.high_pass,
             low_pass=self.low_pass,
             t_r=tr,
-            sample_mask=sample_mask,
+            sample_mask=[utils.int_sample_mask_to_bool(sample_mask)],
             extrapolate=False,
         )
         del X
@@ -202,20 +202,20 @@ def clean_img(
     nii = nb.nifti1.Nifti1Image.load(img).slicer[:, :, :, n_non_steady_state_tr:]
 
     assert len(nii.shape) == 4
+    t_r = utils.get_tr(nii)
 
     if do_detrend:
         nii = detrend(nii, mask=mask)
     if do_winsorize:
-        nii = winsorize(nii)
+        nii = winsorize(nii, mask=mask)
     if to_percentchange:
         nii = to_local_percent_change(nii)
 
-    # note that this relies on default behavior for standardizing confounds when passed to image.clean
-    nii_clean: nb.nifti1.Nifti1Image = image.clean_img(
+    nii: nb.nifti1.Nifti1Image = image.clean_img(
         imgs=nii,
         high_pass=high_pass,
         low_pass=low_pass,
-        t_r=utils.get_tr(nii),
+        t_r=t_r,
         confounds=confounds,
         standardize=standardize,
         detrend=False,
@@ -225,10 +225,10 @@ def clean_img(
     )  # type: ignore
 
     if fwhm:
-        nii_smoothed: nb.nifti1.Nifti1Image = image.smooth_img(nii_clean, fwhm=fwhm)  # type: ignore
-        return nii_smoothed
+        nii: nb.nifti1.Nifti1Image = image.smooth_img(nii, fwhm=fwhm)  # type: ignore
+        return nii
     else:
-        return nii_clean
+        return nii
 
 
 def to_local_percent_change(
@@ -248,23 +248,28 @@ def to_local_percent_change(
     return nb.nifti1.Nifti1Image(dataobj=pc, affine=img.affine, header=img.header)
 
 
-def winsorize(img: nb.nifti1.Nifti1Image, std: float = 3) -> nb.nifti1.Nifti1Image:
-    ms = img.get_fdata().mean(axis=-1, keepdims=True)
-    stds = img.get_fdata().std(axis=-1, ddof=1, keepdims=True)
+def winsorize(
+    img: nb.nifti1.Nifti1Image, mask: Path, std: float = 3
+) -> nb.nifti1.Nifti1Image:
+    dataobj = masking.apply_mask(img, mask_img=mask)
 
+    ms = dataobj.mean(axis=0, keepdims=True)
+    stds = dataobj.std(axis=0, ddof=1, keepdims=True)
+
+    # working to get Z to boolean before creating replacements
     where = np.asarray(stds > 0, dtype=np.bool)
-    Z = img.get_fdata() - ms
+    Z = np.zeros_like(dataobj)
+    np.subtract(dataobj, ms, out=Z, where=where)
     np.divide(Z, stds, out=Z, where=where)
-    Z[np.logical_not(where.squeeze())] = 0
-    Z = np.abs(Z)
+    np.absolute(Z, out=Z, where=where)
+    where_to_replace = np.asarray(Z > std, dtype=np.bool)
+    del Z
+    replacements = ms + std * stds * np.sign(dataobj - ms)
 
-    replacements = ms + std * stds * np.sign(img.get_fdata() - ms)
-    winsorized = img.get_fdata().copy()
-    winsorized[Z > std] = replacements[Z > std]
+    dataobj[where_to_replace] = replacements[where_to_replace]
+    del replacements
 
-    return nb.nifti1.Nifti1Image(
-        dataobj=winsorized, affine=img.affine, header=img.header
-    )
+    return masking.unmask(dataobj, mask_img=mask)  # type: ignore
 
 
 def get_poly_design(N: int, degree: int) -> np.ndarray:
@@ -293,3 +298,14 @@ def _detrend(Y: np.ndarray) -> np.ndarray:
     X = get_poly_design(Y.shape[0], degree=3)
     beta = np.linalg.pinv(X).dot(Y)
     return Y - np.dot(X[:, 1:], beta[1:, :])
+
+
+def image_difference(img1: Path, img2: Path) -> nb.nifti1.Nifti1Image:
+    # not using nilearn.image.math_img due to memory inefficiency
+    active = nb.nifti1.Nifti1Image.load(img1)
+    baseline = nb.nifti1.Nifti1Image.load(img2)
+    return nb.nifti1.Nifti1Image(
+        active.get_fdata() - baseline.get_fdata(),
+        header=active.header,
+        affine=active.affine,
+    )
