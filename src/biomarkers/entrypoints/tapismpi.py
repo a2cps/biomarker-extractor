@@ -79,9 +79,12 @@ class TapisMPIEntrypoint(pydantic.BaseModel):
     def stage(self, dst: Path) -> Path:
         for src in iterate_byrank_serial(self.ins, self.RANK):
             logging.info(f"Staging files for {src=} -> {dst=}")
-            shutil.copytree(
-                src, dst, ignore=self.stage_ignore_patterns, dirs_exist_ok=True
-            )
+            try:
+                shutil.copytree(
+                    src, dst, ignore=self.stage_ignore_patterns, dirs_exist_ok=True
+                )
+            except Exception:
+                logging.error("Failed to stage. Subsequent steps will likely fail.")
         return dst
 
     def check_outputs(self, output_dir_to_check: Path) -> bool:

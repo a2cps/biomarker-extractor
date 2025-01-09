@@ -186,14 +186,13 @@ class FSLAnatEntrypoint(tapismpi.TapisMPIEntrypoint):
                     {tmpd_in}: {maybe_nii}. Taking first."
             )
         nii = maybe_nii[0]
-        image = tmpd_out / nii.stem
 
-        basename = utils.img_stem(image)
+        basename = utils.img_stem(nii)
         anat = _predict_fsl_anat_output(tmpd_out, basename)
 
         utils.mkdir_recursive(anat)
 
-        shutil.copyfile(image, anat / "T1.nii.gz")
+        shutil.copyfile(nii, anat / "T1.nii.gz")
 
         if self.precrop and self.precrop[self.RANK]:
             _precrop(anat)
