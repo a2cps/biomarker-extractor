@@ -14,9 +14,29 @@ import pydantic
 from mpi4py import MPI
 
 from biomarkers import utils
-from biomarkers.entrypoints import tapis
 
 T = typing.TypeVar("T")
+
+
+def copy_tapis_files(outdir: Path) -> None:
+    # tapis logs tend to be in the form of [jobid].{err,out}
+    # this copies them to a destination folder
+    cwd = Path(os.environ.get("_tapisJobWorkingDir", os.getcwd()))
+    for stderr in cwd.glob("*.err"):
+        shutil.copyfile(stderr, outdir / stderr.name)
+    for stdout in cwd.glob("*.out"):
+        shutil.copyfile(stdout, outdir / stdout.name)
+
+
+def add_tapis_files_to_tarball(tarball: Path) -> None:
+    # tapis logs tend to be in the form of [jobid].{err,out}
+    # this copies them to a destination folder
+    cwd = Path(os.environ.get("_tapisJobWorkingDir", os.getcwd()))
+    with tarfile.open(tarball, "a") as tf:
+        for stderr in cwd.glob("*.err"):
+            tf.add(stderr, stderr.name)
+        for stdout in cwd.glob("*.out"):
+            tf.add(stdout, stdout.name)
 
 
 def configure_mpi_logger() -> None:
@@ -49,7 +69,7 @@ class TapisMPIEntrypoint(pydantic.BaseModel):
     RANK: int = pydantic.Field(default_factory=MPI.COMM_WORLD.Get_rank)
     USIZE: int = pydantic.Field(default_factory=MPI.COMM_WORLD.Get_size)
     job_id: str = pydantic.Field(
-        default_factory=lambda: os.environ.get("_tapisJobUUID", uuid.uuid4())
+        default_factory=lambda: os.environ.get("_tapisJobUUID", str(uuid.uuid4()))
     )
 
     @abstractmethod
@@ -112,7 +132,7 @@ class TapisMPIEntrypoint(pydantic.BaseModel):
                     utils.mkdir_recursive(log_dst, mode=utils.DIR_PERMISSIONS)
                 for log in src.glob("*log"):
                     shutil.copyfile(log, log_dst / log.name)
-                    tapis._copy_tapis_files(log_dst)
+                    copy_tapis_files(log_dst)
 
     async def run(self):
         with tempfile.TemporaryDirectory() as _tmpd_in:
@@ -141,11 +161,11 @@ class TapisMPIEntrypoint(pydantic.BaseModel):
                 # when there was a success, there should be a tarball in the
                 # output folder. The out,err files need to be added
                 for tarball in outdir.glob("*tar"):
-                    tapis._add_tapis_files_to_tarball(tarball)
+                    add_tapis_files_to_tarball(tarball)
                 # if there was a failure, the logs should have been copied
                 # into an appropriate place underneath FAILURE_LOG_DST
                 for log_dst in utils.FAILURE_LOG_DST.glob(f"*{outdir.stem}"):
                     if log_dst.is_dir():
-                        tapis._copy_tapis_files(log_dst)
+                        copy_tapis_files(log_dst)
             except Exception:
                 logging.exception("Failed to handle job out,err")
