@@ -259,7 +259,7 @@ def update_confounds(
     compcor: pl.DataFrame | None = None,
 ) -> pl.DataFrame:
     out = (
-        pl.read_csv(confounds, separator="\t", columns=usecols)
+        pl.read_csv(confounds, separator="\t", columns=usecols, null_values="n/a")
         .with_row_index("t")
         .slice(n_non_steady_state_tr)
     )

@@ -8,7 +8,6 @@ from biomarkers.models import cat
 
 
 class CATEntrypoint(tapismpi.TapisMPIEntrypoint):
-
     def get_args(self, batchfile: Path) -> list[str]:
         return ["/opt/spm/spm12", "batch", str(batchfile)]
 
@@ -31,7 +30,6 @@ class CATEntrypoint(tapismpi.TapisMPIEntrypoint):
         return out
 
     async def prep(self, tmpd_in: Path, tmpd_out: Path) -> Path:
-
         logging.info(f"Looking for *T1w.nii.gz in {tmpd_in}")
         maybe_nii = list(d for d in tmpd_in.rglob("*T1w.nii.gz"))
         if len(maybe_nii) == 0:
@@ -59,7 +57,6 @@ class CATEntrypoint(tapismpi.TapisMPIEntrypoint):
         return batch_out
 
     async def run_flow(self, tmpd_in: Path, tmpd_out: Path) -> None:
-
         batchfile = await self.prep(tmpd_in, tmpd_out)
         async with utils.subprocess_manager(
             log=tmpd_out / f"cat12_rank-{self.RANK}.log",
