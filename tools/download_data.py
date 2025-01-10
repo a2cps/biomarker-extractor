@@ -26,7 +26,7 @@ rois: pd.DataFrame = nilearn_datasets.fetch_coords_power_2011(
 ).rois
 rois.query("not roi in [127, 183, 184, 185, 243, 244, 245, 246]", inplace=True)
 rois.rename(columns={"roi": "region"}).to_csv(
-    data_dir / "power2011.csv", index=False
+    data_dir / "power2011_atlas.tsv", index=False, sep="\t"
 )
 
 # gordon parcels downloaded from (based on https://doi.org/10.1093/cercor/bhu239)

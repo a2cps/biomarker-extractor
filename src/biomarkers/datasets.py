@@ -129,20 +129,6 @@ def get_baliki_lut() -> pl.DataFrame:
     return coordinates
 
 
-def get_coordinates_power2011() -> pl.DataFrame:
-    """Return dataframe volumetric atlas from Power et al. 2011 (https://doi.org/10.1016/j.neuron.2011.09.006)
-
-    Returns:
-        dataframe of coordinates
-    """
-    with resources.as_file(
-        resources.files("biomarkers.data").joinpath("power2011.csv")
-    ) as f:
-        coordinates = pl.read_csv(f)
-
-    return coordinates
-
-
 def get_difumo_lut(dimension: DIFUMODimension) -> pl.DataFrame:
     with resources.as_file(
         resources.files(f"biomarkers.data.difumo_atlases.{dimension}").joinpath(

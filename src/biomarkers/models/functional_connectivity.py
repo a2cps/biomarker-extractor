@@ -196,6 +196,7 @@ class PostProcessRunFlow(pydantic.BaseModel):
                 / f"sub={self.process_flow.sub}"
                 / f"ses={self.process_flow.ses}"
                 / f"task={self.process_flow.task}"
+                / f"run={self.process_flow.run}"
                 / "part-0.parquet",
             )
 
@@ -216,7 +217,7 @@ def get_baliki_coordinates() -> dict[int, fnc_models.Coordinate]:
 
 
 def get_power_coordinates() -> dict[int, fnc_models.Coordinate]:
-    coordinates = datasets.get_coordinates_power2011()
+    coordinates = datasets.get_power2011_coordinates()
     return df_to_coordinates(coordinates)
 
 

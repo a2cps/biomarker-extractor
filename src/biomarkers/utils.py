@@ -16,8 +16,6 @@ import numpy as np
 import pandas as pd
 import polars as pl
 
-from biomarkers.models import bids
-
 P = ParamSpec("P")
 R = TypeVar("R")
 
@@ -238,20 +236,6 @@ def gzip_file(src: Path, dst: Path):
 
 
 @cache_dataframe
-def to_parquet3d(fmriprep_func3ds: typing.Sequence[bids.Func3d]) -> pl.DataFrame:
-    if not len(fmriprep_func3ds):
-        msg = "there should be at least 1 image to process"
-        raise AssertionError(msg)
-
-    d = fmriprep_func3ds[0].to_polars()
-
-    for func3d in fmriprep_func3ds:
-        d = d.join(func3d.to_polars(), on="voxel")
-
-    return d
-
-
-@cache_dataframe
 def update_confounds(
     confounds: Path,
     n_non_steady_state_tr: int = 0,
@@ -271,7 +255,7 @@ def update_confounds(
             .join(out, how="right", on="t")
         )
 
-    return out.drop("t")
+    return out.sort("t").drop("t")
 
 
 def write_parquet(d: pl.DataFrame, dst: Path):
