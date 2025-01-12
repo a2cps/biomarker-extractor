@@ -258,11 +258,13 @@ def update_confounds(
     return out.sort("t").drop("t")
 
 
-def write_parquet(d: pl.DataFrame, dst: Path):
+def write_parquet(
+    d: pl.DataFrame, dst: Path, partition_by: typing.Sequence[str] | None = None
+):
     if not (parent := dst.parent).exists():
         parent.mkdir(parents=True)
 
-    d.write_parquet(file=dst)
+    d.write_parquet(file=dst, partition_by=partition_by)
 
 
 def check_matching_image_shapes(imgs: typing.Sequence[Path]) -> bool:

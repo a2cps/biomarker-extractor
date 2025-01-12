@@ -1,4 +1,3 @@
-import tempfile
 import typing
 from pathlib import Path
 
@@ -89,7 +88,7 @@ def _get_estimators() -> dict[str, type[covariance.EmpiricalCovariance]]:
 
 
 def read_timeseries(src: Path) -> pl.DataFrame:
-    return pl.read_parquet(src).pivot(index="t", on="region").drop("t")
+    return pl.read_parquet(src).pivot(index="t", on="region").sort("t").drop("t")
 
 
 def unpivot_timeseries_to_df(
@@ -127,78 +126,63 @@ class PostProcessRunFlow(pydantic.BaseModel):
             / f"run={self.process_flow.run}"
         )
 
-        with tempfile.TemporaryDirectory() as tmpd_:
-            tmpd_connectivity = Path(tmpd_) / "connectivity"
-            space_d = (
-                tmpd_connectivity
-                / f"sub={self.process_flow.sub}"
-                / f"ses={self.process_flow.ses}"
-                / f"task={self.process_flow.task}"
-                / f"run={self.process_flow.run}"
-            )
-            if self.labels is not None:
-                for atlas, label in self.labels.items():
-                    timeseries = get_labels_timeseries(
-                        space_d_timeseries / f"atlas={atlas}" / "part-0.parquet",
-                        img=self.process_flow.cleaned,
-                        labels=label,
-                        mask_img=self.process_flow.mask,
+        space_d = (
+            self.process_flow.dst
+            / "connectivity"
+            / f"sub={self.process_flow.sub}"
+            / f"ses={self.process_flow.ses}"
+            / f"task={self.process_flow.task}"
+            / f"run={self.process_flow.run}"
+        )
+        if self.labels is not None:
+            for atlas, label in self.labels.items():
+                timeseries = get_labels_timeseries(
+                    space_d_timeseries / f"atlas={atlas}" / "part-0.parquet",
+                    img=self.process_flow.cleaned,
+                    labels=label,
+                    mask_img=self.process_flow.mask,
+                )
+                for e, estimator in self.estimators.items():
+                    get_labels_connectivity(
+                        space_d
+                        / f"atlas={atlas}"
+                        / f"estimator={e}"
+                        / "part-0.parquet",
+                        src=timeseries,
+                        estimator=estimator,
                     )
-                    for e, estimator in self.estimators.items():
-                        get_labels_connectivity(
-                            space_d
-                            / f"atlas={atlas}"
-                            / f"estimator={e}"
-                            / "part-0.parquet",
-                            src=timeseries,
-                            estimator=estimator,
-                        )
 
-            if self.maps is not None:
-                for atlas, m in self.maps.items():
-                    timeseries = get_maps_timeseries(
-                        space_d_timeseries / f"atlas={atlas}" / "part-0.parquet",
-                        img=self.process_flow.cleaned,
-                        maps=m,
-                        mask_img=self.process_flow.mask,
+        if self.maps is not None:
+            for atlas, m in self.maps.items():
+                timeseries = get_maps_timeseries(
+                    space_d_timeseries / f"atlas={atlas}" / "part-0.parquet",
+                    img=self.process_flow.cleaned,
+                    maps=m,
+                    mask_img=self.process_flow.mask,
+                )
+                for e, estimator in self.estimators.items():
+                    get_maps_connectivity(
+                        space_d
+                        / f"atlas={atlas}"
+                        / f"estimator={e}"
+                        / "part-0.parquet",
+                        src=timeseries,
+                        estimator=estimator,
                     )
-                    for e, estimator in self.estimators.items():
-                        get_maps_connectivity(
-                            space_d
-                            / f"atlas={atlas}"
-                            / f"estimator={e}"
-                            / "part-0.parquet",
-                            src=timeseries,
-                            estimator=estimator,
-                        )
 
-            if self.coordinates is not None:
-                for key, value in self.coordinates.items():
-                    timeseries = get_coordinates_timeseries(
-                        space_d_timeseries / f"atlas={key}" / "part-0.parquet",
-                        img=self.process_flow.cleaned,
-                        coordinates=value,
+        if self.coordinates is not None:
+            for key, value in self.coordinates.items():
+                timeseries = get_coordinates_timeseries(
+                    space_d_timeseries / f"atlas={key}" / "part-0.parquet",
+                    img=self.process_flow.cleaned,
+                    coordinates=value,
+                )
+                for e, estimator in self.estimators.items():
+                    get_coordinates_connectivity(
+                        space_d / f"atlas={key}" / f"estimator={e}" / "part-0.parquet",
+                        src=timeseries,
+                        estimator=estimator,
                     )
-                    for e, estimator in self.estimators.items():
-                        get_coordinates_connectivity(
-                            space_d
-                            / f"atlas={key}"
-                            / f"estimator={e}"
-                            / "part-0.parquet",
-                            src=timeseries,
-                            estimator=estimator,
-                        )
-
-            utils.write_parquet(
-                pl.read_parquet(space_d),
-                self.process_flow.dst
-                / "connectivity"
-                / f"sub={self.process_flow.sub}"
-                / f"ses={self.process_flow.ses}"
-                / f"task={self.process_flow.task}"
-                / f"run={self.process_flow.run}"
-                / "part-0.parquet",
-            )
 
 
 def df_to_coordinates(df: pl.DataFrame) -> dict[int, fnc_models.Coordinate]:

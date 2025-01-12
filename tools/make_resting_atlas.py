@@ -44,10 +44,9 @@ d = pd.DataFrame(
 d["cluster"] = [cluster_names[x] for x in d["cluster"]]
 d["pain_cluster"] = [pain_clusters[x] for x in d["pain_cluster"]]
 d["name"] = full_names
-d["value"] = range(1, 280)
 
-d[["name", "cluster", "pain_cluster"]].assign(value=range(1, 280)).to_csv(
-    "../src/biomarkers/data/fan_atlas.csv", index=False
+d[["name", "cluster", "pain_cluster"]].assign(region=range(1, 280)).to_csv(
+    "../src/biomarkers/data/fan.csv", index=False
 )
 
 m = maskers.NiftiLabelsMasker(

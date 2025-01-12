@@ -24,7 +24,6 @@ for n in [400]:
 rois: pd.DataFrame = nilearn_datasets.fetch_coords_power_2011(
     legacy_format=False
 ).rois
-rois.query("not roi in [127, 183, 184, 185, 243, 244, 245, 246]", inplace=True)
 rois.rename(columns={"roi": "region"}).to_csv(
     data_dir / "power2011_atlas.tsv", index=False, sep="\t"
 )

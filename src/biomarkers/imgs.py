@@ -196,7 +196,7 @@ def clean_img(
     n_non_steady_state_tr: int = 0,
 ) -> nb.nifti1.Nifti1Image:
     if confounds_file:
-        confounds = pl.read_parquet(confounds_file).to_pandas()
+        confounds = pl.read_parquet(confounds_file).to_numpy()
     else:
         confounds = None
     nii = nb.nifti1.Nifti1Image.load(img).slicer[:, :, :, n_non_steady_state_tr:]
@@ -206,6 +206,10 @@ def clean_img(
 
     if do_detrend:
         nii = detrend(nii, mask=mask)
+        if confounds is not None:
+            # this does not center confounds, but that is handled
+            # during nilearn.image.clean_img
+            confounds = _detrend(confounds)
     if do_winsorize:
         nii = winsorize(nii, mask=mask)
     if to_percentchange:
@@ -294,8 +298,8 @@ def detrend(img: nb.nifti1.Nifti1Image, mask: Path) -> nb.nifti1.Nifti1Image:
     return masking.unmask(resid, mask)  # type: ignore
 
 
-def _detrend(Y: np.ndarray) -> np.ndarray:
-    X = get_poly_design(Y.shape[0], degree=3)
+def _detrend(Y: np.ndarray, degree: int = 3) -> np.ndarray:
+    X = get_poly_design(Y.shape[0], degree=degree)
     beta = np.linalg.pinv(X).dot(Y)
     return Y - np.dot(X[:, 1:], beta[1:, :])
 
