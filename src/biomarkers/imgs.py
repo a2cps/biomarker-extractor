@@ -76,9 +76,7 @@ class CompCor(pydantic.BaseModel):
         # compcor works on PCA of MM^T
         return self.comp_cor(X=X_cleaned.T, t_index=sample_mask)
 
-    def comp_cor(
-        self, X: np.ndarray, t_index: np.typing.NDArray[np.uint32] | None = None
-    ) -> pl.DataFrame:
+    def comp_cor(self, X: np.ndarray, t_index=None) -> pl.DataFrame:
         if not X.ndim == 2:
             msg = "y must be a 2D array"
             raise AssertionError(msg)

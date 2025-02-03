@@ -234,3 +234,11 @@ def get_fan_atlas(resolution: FanResolution = 2) -> Labels:
     atlas = get_fan_atlas_nii_file(resolution=resolution)
     labels = get_fan_atlas_lut()
     return Labels(labels_img=atlas, labels=labels)
+
+
+def get_dtifit_script() -> Path:
+    with resources.as_file(
+        resources.files("biomarkers.data").joinpath("dtifit_wrapper")
+    ) as f:
+        path = f
+    return path
