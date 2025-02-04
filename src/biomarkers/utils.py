@@ -64,14 +64,16 @@ def img_stem(img: Path) -> str:
     return img.name.removesuffix(".gz").removesuffix(".nii")
 
 
-def int_sample_mask_to_bool(sample_mask) -> list[bool]:
+def int_sample_mask_to_bool(sample_mask: np.typing.NDArray[np.uint32]) -> list[bool]:
     min_tr = sample_mask.min()
     n_tr = len(sample_mask)
     n_excluded_tr = len(np.arange(0, min_tr))
     return [False] * n_excluded_tr + [True] * n_tr
 
 
-def exclude_to_index(n_non_steady_state_tr: int, n_tr: int):
+def exclude_to_index(
+    n_non_steady_state_tr: int, n_tr: int
+) -> np.typing.NDArray[np.uint32]:
     return np.array(
         [x for x in np.arange(n_non_steady_state_tr, n_tr, dtype=np.uint32)]
     )

@@ -1,7 +1,7 @@
 import typing
 from pathlib import Path
 
-from biomarkers import datasets, utils
+from biomarkers import utils
 from biomarkers.entrypoints import tapismpi
 
 
@@ -12,7 +12,7 @@ class DTIFitEntrypoint(tapismpi.TapisMPIEntrypoint):
 
     def get_args(self, qsiprepdir: Path, outdir: Path) -> list[str]:
         return [
-            str(datasets.get_dtifit_script()),
+            "dtifit_wrapper",
             str(qsiprepdir),
             str(outdir),
             str(self.fs_license_file),
