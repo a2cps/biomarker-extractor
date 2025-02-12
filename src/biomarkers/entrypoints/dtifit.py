@@ -23,14 +23,7 @@ class DTIFitEntrypoint(tapismpi.TapisMPIEntrypoint):
     def check_outputs(self, output_dir_to_check: Path) -> bool:
         return all(
             (output_dir_to_check / d).exists()
-            for d in [
-                "qsirecon/derivatives/qsirecon-FSL",
-                "split_shells",
-                "dtifit-multishell",
-                "dtifit-b1000",
-                "dtifit-b2000",
-                "dtifit-b3000",
-            ]
+            for d in ["qsirecon-fsl/derivatives/qsirecon-FSL", "split_shells", "dtifit"]
         )
 
     async def run_flow(self, tmpd_in: Path, tmpd_out: Path) -> None:
