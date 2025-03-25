@@ -19,13 +19,7 @@ class BEDPOSTXEntrypoint(tapismpi.TapisMPIEntrypoint):
         ]
 
     def check_outputs(self, output_dir_to_check: Path) -> bool:
-        return (
-            output_dir_to_check
-            / "bedpostx"
-            / self.participant_label[self.RANK]
-            / self.ses_label[self.RANK]
-            / "qsirecon.bedpostx"
-        ).exists()
+        return (output_dir_to_check / "bedpostx").exists()
 
     async def run_flow(self, tmpd_in: Path, tmpd_out: Path) -> None:
         async with utils.subprocess_manager(
