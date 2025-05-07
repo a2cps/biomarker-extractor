@@ -1,3 +1,5 @@
+import logging
+import shutil
 import typing
 from pathlib import Path
 
@@ -13,13 +15,13 @@ class DWIBiomarker1Entrypoint(tapismpi.TapisMPIEntrypoint):
     roi_dir: Path = Path("/opt/tapis/rois")
     n_workers: int = 1
 
-    def get_args(self, qsiprepdir: Path, outdir: Path) -> list[str]:
+    def get_args(self, qsiprepdir: Path, outdir: Path, bedpostxdir: Path) -> list[str]:
         return [
             "probtrackx2_voxelwise",
             str(self.participant_label[self.RANK]),
             str(self.ses_label[self.RANK]),
             str(qsiprepdir),
-            str(self.bedpostxdir[self.RANK]),
+            str(bedpostxdir),
             str(outdir),
             str(self.roi_dir),
             str(self.n_workers),
@@ -28,10 +30,29 @@ class DWIBiomarker1Entrypoint(tapismpi.TapisMPIEntrypoint):
     def check_outputs(self, output_dir_to_check: Path) -> bool:
         return (output_dir_to_check / "probtrackx").exists()
 
-    async def run_flow(self, tmpd_in: Path, tmpd_out: Path) -> None:
+    def prep(self, tmpd_in: Path) -> Path:
+        for src in tapismpi.iterate_byrank_serial(self.bedpostxdir, self.RANK):
+            logging.info(f"Staging files for {src=} -> {tmpd_in=}")
+            try:
+                tmp_bedpostx = shutil.copytree(
+                    src, tmpd_in, ignore=self.stage_ignore_patterns, dirs_exist_ok=True
+                )
+                return tmp_bedpostx
+            except Exception:
+                logging.error(
+                    "Failed to stage bedpostx. Subsequent steps will likely fail."
+                )
+
+        logging.error("Never copied bedpostx. Subsequent steps will likely fail.")
+        return tmpd_in
+
+    async def run_flow(self, in_dir: Path, out_dir: Path) -> None:
+        bedpostxdir = self.prep(in_dir)
         async with utils.subprocess_manager(
-            log=tmpd_out / f"probtrackx2_rank-{self.RANK}.log",
-            args=self.get_args(qsiprepdir=tmpd_in, outdir=tmpd_out),
+            log=out_dir / f"probtrackx2_rank-{self.RANK}.log",
+            args=self.get_args(
+                qsiprepdir=in_dir, outdir=out_dir, bedpostxdir=bedpostxdir
+            ),
         ) as proc:
             await proc.wait()
 
@@ -40,7 +61,7 @@ class DWIBiomarker1Entrypoint(tapismpi.TapisMPIEntrypoint):
                 raise RuntimeError(msg)
 
             dwi_bm1_flow.dwi_biomarker1_flow(
-                outdir=tmpd_out,
+                outdir=out_dir,
                 participant_label=self.participant_label[self.RANK],
                 session_label=self.ses_label[self.RANK],
             )

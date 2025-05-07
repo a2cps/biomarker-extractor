@@ -6,6 +6,8 @@ import numpy as np
 import polars as pl
 import pydantic
 
+from biomarkers import utils
+
 
 class Module(pydantic.BaseModel):
     index: int
@@ -20,7 +22,7 @@ MODULE_INFO = (
 )
 
 
-def get_symmetric_matrix(coords: np.ndarray, src: Path) -> np.ndarray:
+def get_adjacency_matrix(coords: np.ndarray, src: Path) -> np.ndarray:
     tracts_img = nb.nifti1.Nifti1Image.load(src).get_fdata()
 
     # Number of voxels
@@ -28,12 +30,16 @@ def get_symmetric_matrix(coords: np.ndarray, src: Path) -> np.ndarray:
 
     tracts_mat = np.zeros((nvox, nvox))
     for i, (x, y, z, _) in enumerate(coords):
-        tracts_mat[i, :] = tracts_img[x, y, z, :nvox].squeeze()
+        tracts_mat[i, :] = tracts_img[x, y, z, :].squeeze()
 
+    return tracts_mat
+
+
+def symmetrize(adjacency: np.ndarray) -> np.ndarray:
     # Symmetrize and zero-diagonal
-    tracts_mat_sym = (tracts_mat + tracts_mat.T) / 2.0
-    np.fill_diagonal(tracts_mat_sym, 0)
-    return tracts_mat_sym
+    adjacency_sym = (adjacency + adjacency.T) / 2.0
+    np.fill_diagonal(adjacency_sym, 0)
+    return adjacency_sym
 
 
 def get_summary(mat: np.ndarray) -> pl.DataFrame:
@@ -41,7 +47,6 @@ def get_summary(mat: np.ndarray) -> pl.DataFrame:
     Ccoef = bct.clustering_coef_bu(mat).mean()
     Betw = bct.betweenness_bin(mat).mean()
     Dist = 1.0 / Eglob
-    _, Mod = bct.modularity_und(mat)
     Deg = bct.degrees_und(mat)
     Deg_mean = np.mean(Deg)
     density, _, _ = bct.density_und(mat)
@@ -53,11 +58,21 @@ def get_summary(mat: np.ndarray) -> pl.DataFrame:
             "Ccoef": Ccoef,
             "Betw": Betw,
             "Dist": Dist,
-            "Mod": Mod,
             "Deg_mean": Deg_mean,
             "Density": density,
             "WM_connections": WM_conn,
         }
+    )
+
+
+def write_adjacency_as_df(adjacency: np.ndarray, dst: Path):
+    utils.mkdir_recursive(dst.parent)
+    (
+        pl.DataFrame(adjacency)
+        .with_row_index("source")
+        .unpivot(index="source", variable_name="target", value_name="connectivity")
+        .with_columns(pl.col("target").str.strip_prefix("column_").cast(pl.UInt32()))
+        .write_parquet(dst)
     )
 
 
@@ -98,7 +113,8 @@ def dwi_biomarker1_flow(
     # ------------------------------
     # Step 2: Build distance matrix
     # ------------------------------
-    dist_mat_sym = get_symmetric_matrix(
+
+    lengths = get_adjacency_matrix(
         coor_roi,
         tract_path
         / f"{participant_label}_{session_label}_DWIbiomarker1_fdtlengths_all.nii.gz",
@@ -107,15 +123,23 @@ def dwi_biomarker1_flow(
     # ------------------------------
     # Step 3: Build tractography (streamline count) matrix
     # ------------------------------
-
-    final_bin = get_symmetric_matrix(
+    paths = get_adjacency_matrix(
         coor_roi,
         tract_path
         / f"{participant_label}_{session_label}_DWIbiomarker1_fdtpaths_all.nii.gz",
     )
 
     # Distance correction: multiply by distances
-    final_bin *= dist_mat_sym
+    final_bin = symmetrize(paths) * symmetrize(lengths)
+
+    write_adjacency_as_df(
+        paths,
+        outdir
+        / "connectivity"
+        / f"sub={participant_label.removeprefix('sub-')}"
+        / f"ses={session_label.removeprefix('ses-')}"
+        / "part-0.parquet",
+    )
 
     # Normalize weights
     bct.weight_conversion(final_bin, "normalize", copy=False)
@@ -128,14 +152,6 @@ def dwi_biomarker1_flow(
         bct.threshold_proportional(final_bin, target_density, copy=False),
         "binarize",
         copy=False,
-    )
-
-    # Save binary matrix
-    np.savetxt(
-        tract_path / "DWIbiomarker1_sym_distcorr_norm_bin.txt",
-        final_bin,
-        fmt="%d",
-        delimiter="\t",
     )
 
     # ------------------------------
@@ -157,7 +173,7 @@ def dwi_biomarker1_flow(
     # Step 5b: Whole-network summary
     # ------------------------------
     rows.append(
-        get_summary(mat).with_columns(
+        get_summary(final_bin).with_columns(
             ModuleNumber=0, ModuleName=pl.lit("WholeNetwork"), IsBiomarker=False
         )
     )
