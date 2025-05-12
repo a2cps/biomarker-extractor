@@ -108,7 +108,7 @@ def dwi_biomarker1_flow(
         coords.append(np.column_stack([_coords, np.repeat(roi_id, _coords.shape[0])]))
 
     # Combine to coor_roi: x, y, z, roi_id
-    coor_roi = np.vstack(coords)[1:]
+    coor_roi = np.vstack(coords)
 
     # ------------------------------
     # Step 2: Build distance matrix
