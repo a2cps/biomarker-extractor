@@ -83,14 +83,14 @@ def dwi_biomarker1_flow(
     participant_label = f"sub-{sub}"
     session_label = f"ses-{ses}"
     # Paths
-    roi_path = outdir / "move_masks" / participant_label / session_label
+    move_masks = outdir / "move_masks" / participant_label / session_label / "dwi"
     tract_path = outdir / "probtrackx" / participant_label / session_label / "dwi"
 
     # ------------------------------
     # Step 1: Load mask and get voxel coordinates
     # ------------------------------
     mask_img = nb.nifti1.Nifti1Image.load(
-        roi_path
+        move_masks
         / f"{participant_label}_{session_label}_desc-modulesindex_space-dwifslstd_mask.nii.gz"
     )
     dmask = np.asarray(mask_img.get_fdata(), dtype=np.int64)
