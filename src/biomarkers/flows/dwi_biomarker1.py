@@ -91,7 +91,7 @@ def dwi_biomarker1_flow(
     # ------------------------------
     mask_img = nb.nifti1.Nifti1Image.load(
         move_masks
-        / f"{participant_label}_{session_label}_desc-modulesindex_space-dwifslstd_mask.nii.gz"
+        / f"{participant_label}_{session_label}_space-dwifslstd_desc-modules_dseg.nii.gz"
     )
     dmask = np.asarray(mask_img.get_fdata(), dtype=np.int64)
 
@@ -111,7 +111,7 @@ def dwi_biomarker1_flow(
     lengths = get_adjacency_matrix(
         coor_roi,
         tract_path
-        / f"{participant_label}_{session_label}_desc-DWIbiomarker1fdtlengths_dwi.nii.gz",
+        / f"{participant_label}_{session_label}_space-dwifslstd_desc-DWIbiomarker1fdtlengths_dwi.nii.gz",
     )
 
     # ------------------------------
@@ -120,7 +120,7 @@ def dwi_biomarker1_flow(
     paths = get_adjacency_matrix(
         coor_roi,
         tract_path
-        / f"{participant_label}_{session_label}_desc-DWIbiomarker1fdtpaths_dwi.nii.gz",
+        / f"{participant_label}_{session_label}_space-dwifslstd_desc-DWIbiomarker1fdtpaths_dwi.nii.gz",
     )
 
     # Distance correction: multiply by distances
