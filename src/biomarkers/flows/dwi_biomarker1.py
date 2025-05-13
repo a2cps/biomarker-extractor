@@ -72,6 +72,7 @@ def write_adjacency_as_df(adjacency: np.ndarray, dst: Path):
         .with_row_index("source")
         .unpivot(index="source", variable_name="target", value_name="connectivity")
         .with_columns(pl.col("target").str.strip_prefix("column_").cast(pl.UInt32()))
+        .filter(pl.col("target") < pl.col("source"))
         .write_parquet(dst)
     )
 
@@ -132,8 +133,11 @@ def dwi_biomarker1_flow(
     # Distance correction: multiply by distances
     final_bin = symmetrize(paths) * symmetrize(lengths)
 
+    # Normalize weights
+    bct.weight_conversion(final_bin, "normalize", copy=False)
+
     write_adjacency_as_df(
-        paths,
+        final_bin,
         outdir
         / "connectivity"
         / f"sub={participant_label.removeprefix('sub-')}"
@@ -141,13 +145,9 @@ def dwi_biomarker1_flow(
         / "part-0.parquet",
     )
 
-    # Normalize weights
-    bct.weight_conversion(final_bin, "normalize", copy=False)
-
     # ------------------------------
-    # Step 4: Threshold to target density
+    # Step 4: Threshold to target density and binarize
     # ------------------------------
-
     bct.weight_conversion(
         bct.threshold_proportional(final_bin, target_density, copy=False),
         "binarize",
