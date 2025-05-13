@@ -104,8 +104,8 @@ def dwi_biomarker1_flow(
 
     # Collect voxel indices and ROI labels
     coords = []
-    for roi_id in range(len(MODULE_INFO)):
-        _coords = np.argwhere(dmask == roi_id + 1)
+    for roi_id in [x.index for x in MODULE_INFO]:
+        _coords = np.argwhere(dmask == roi_id)
         coords.append(np.column_stack([_coords, np.repeat(roi_id, _coords.shape[0])]))
 
     # Combine to coor_roi: x, y, z, roi_id
