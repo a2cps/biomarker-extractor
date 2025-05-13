@@ -62,6 +62,6 @@ class DWIBiomarker1Entrypoint(tapismpi.TapisMPIEntrypoint):
 
             dwi_bm1_flow.dwi_biomarker1_flow(
                 outdir=out_dir,
-                participant_label=self.participant_label[self.RANK],
-                session_label=self.ses_label[self.RANK],
+                sub=self.participant_label[self.RANK],
+                ses=self.ses_label[self.RANK],
             )

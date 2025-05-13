@@ -78,27 +78,20 @@ def write_adjacency_as_df(adjacency: np.ndarray, dst: Path):
 
 
 def dwi_biomarker1_flow(
-    outdir: Path,
-    participant_label: str,
-    session_label: str,
-    target_density: float = 0.1,
+    outdir: Path, sub: str, ses: str, target_density: float = 0.1
 ) -> None:
+    participant_label = f"sub-{sub}"
+    session_label = f"ses-{ses}"
     # Paths
     roi_path = outdir / "move_masks" / participant_label / session_label
-    tract_path = (
-        outdir
-        / "probtrackx"
-        / participant_label
-        / session_label
-        / "DWIbiomarker1_modules_all_voxseeds"
-    )
+    tract_path = outdir / "probtrackx" / participant_label / session_label / "dwi"
 
     # ------------------------------
     # Step 1: Load mask and get voxel coordinates
     # ------------------------------
     mask_img = nb.nifti1.Nifti1Image.load(
         roi_path
-        / f"{participant_label}_{session_label}_desc-mask_modules_all_index_space-dwi-fslstd.nii.gz"
+        / f"{participant_label}_{session_label}_desc-modulesindex_space-dwifslstd_mask.nii.gz"
     )
     dmask = np.asarray(mask_img.get_fdata(), dtype=np.int64)
 
@@ -118,7 +111,7 @@ def dwi_biomarker1_flow(
     lengths = get_adjacency_matrix(
         coor_roi,
         tract_path
-        / f"{participant_label}_{session_label}_DWIbiomarker1_fdtlengths_all.nii.gz",
+        / f"{participant_label}_{session_label}_desc-DWIbiomarker1fdtlengths_dwi.nii.gz",
     )
 
     # ------------------------------
@@ -127,7 +120,7 @@ def dwi_biomarker1_flow(
     paths = get_adjacency_matrix(
         coor_roi,
         tract_path
-        / f"{participant_label}_{session_label}_DWIbiomarker1_fdtpaths_all.nii.gz",
+        / f"{participant_label}_{session_label}_desc-DWIbiomarker1fdtpaths_dwi.nii.gz",
     )
 
     # Distance correction: multiply by distances
@@ -138,11 +131,7 @@ def dwi_biomarker1_flow(
 
     write_adjacency_as_df(
         final_bin,
-        outdir
-        / "connectivity"
-        / f"sub={participant_label.removeprefix('sub-')}"
-        / f"ses={session_label.removeprefix('ses-')}"
-        / "part-0.parquet",
+        outdir / "connectivity" / f"sub={sub}" / f"ses={ses}" / "part-0.parquet",
     )
 
     # ------------------------------
@@ -177,8 +166,5 @@ def dwi_biomarker1_flow(
             ModuleNumber=0, ModuleName=pl.lit("WholeNetwork"), IsBiomarker=False
         )
     )
-    out: pl.DataFrame = pl.concat(rows).with_columns(
-        sub=pl.lit(participant_label).str.strip_prefix("sub-"),
-        ses=pl.lit(session_label).str.strip_prefix("ses-"),
-    )
+    out: pl.DataFrame = pl.concat(rows).with_columns(sub=pl.lit(sub), ses=pl.lit(ses))
     out.write_csv(tract_path / "network_summaries.tsv", separator="\t")
