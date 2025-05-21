@@ -31,20 +31,20 @@ class DWIBiomarker1Entrypoint(tapismpi.TapisMPIEntrypoint):
         return (output_dir_to_check / "probtrackx").exists()
 
     def prep(self, tmpd_in: Path) -> Path:
+        tmp_bedpostx_dirs: dict[int, Path] = dict()
         for src in tapismpi.iterate_byrank_serial(self.bedpostxdir, self.RANK):
             logging.info(f"Staging files for {src=} -> {tmpd_in=}")
             try:
-                tmp_bedpostx = shutil.copytree(
+                tmp_bedpostx_dirs[self.RANK] = shutil.copytree(
                     src, tmpd_in, ignore=self.stage_ignore_patterns, dirs_exist_ok=True
                 )
-                return tmp_bedpostx
             except Exception:
-                logging.error(
-                    "Failed to stage bedpostx. Subsequent steps will likely fail."
-                )
+                logging.error("Failed to stage bedpostx. Subsequent steps will fail.")
+        if self.RANK not in tmp_bedpostx_dirs:
+            logging.error("Never staged bedpostx. Subsequent steps will fail.")
+            return tmpd_in
 
-        logging.error("Never copied bedpostx. Subsequent steps will likely fail.")
-        return tmpd_in
+        return Path(tmp_bedpostx_dirs[self.RANK])
 
     async def run_flow(self, in_dir: Path, out_dir: Path) -> None:
         bedpostxdir = self.prep(in_dir)
