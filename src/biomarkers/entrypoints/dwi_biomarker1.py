@@ -28,7 +28,9 @@ class DWIBiomarker1Entrypoint(tapismpi.TapisMPIEntrypoint):
         ]
 
     def check_outputs(self, output_dir_to_check: Path) -> bool:
-        return (output_dir_to_check / "probtrackx").exists()
+        return (output_dir_to_check / "probtrackx").exists() and (
+            len(list((output_dir_to_check).rglob("*tsv"))) == 1
+        )
 
     def prep(self, tmpd_in: Path) -> Path:
         tmp_bedpostx_dirs: dict[int, Path] = dict()
@@ -65,3 +67,5 @@ class DWIBiomarker1Entrypoint(tapismpi.TapisMPIEntrypoint):
                 sub=self.participant_label[self.RANK],
                 ses=self.ses_label[self.RANK],
             )
+            for voxelwise in out_dir.glob("voxelwise"):
+                shutil.rmtree(voxelwise)

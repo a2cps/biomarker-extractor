@@ -1,3 +1,4 @@
+import re
 from pathlib import Path
 
 import bct
@@ -22,15 +23,16 @@ MODULE_INFO = (
 )
 
 
-def get_adjacency_matrix(coords: np.ndarray, src: Path) -> np.ndarray:
-    tracts_img = nb.nifti1.Nifti1Image.load(src).get_fdata()
-
+def get_adjacency_matrix(coords: np.ndarray, src: Path, pattern: str) -> np.ndarray:
     # Number of voxels
     nvox = coords.shape[0]
 
-    tracts_mat = np.zeros((nvox, nvox))
-    for i, (x, y, z, _) in enumerate(coords):
-        tracts_mat[i, :] = tracts_img[x, y, z, :].squeeze()
+    tracts_mat = np.zeros((nvox, nvox), dtype=np.float64)
+    for f in src.rglob(pattern):
+        tracts_img = nb.nifti1.Nifti1Image.load(f).get_fdata()
+        vox = int(re.findall(r"(?<=vox-)\d+", f.name)[0])
+        for i, (x, y, z, _) in enumerate(coords):
+            tracts_mat[i, vox] = tracts_img[x, y, z]
 
     return tracts_mat
 
@@ -85,6 +87,7 @@ def dwi_biomarker1_flow(
     # Paths
     move_masks = outdir / "move_masks" / participant_label / session_label / "dwi"
     tract_path = outdir / "probtrackx" / participant_label / session_label / "dwi"
+    voxelwise = outdir / "voxelwise" / participant_label / session_label
 
     # ------------------------------
     # Step 1: Load mask and get voxel coordinates
@@ -108,23 +111,17 @@ def dwi_biomarker1_flow(
     # Step 2: Build distance matrix
     # ------------------------------
 
-    lengths = get_adjacency_matrix(
-        coor_roi,
-        tract_path
-        / f"{participant_label}_{session_label}_space-dwifslstd_desc-DWIbiomarker1fdtlengths_dwi.nii.gz",
-    )
+    lengths = get_adjacency_matrix(coor_roi, voxelwise, "fdt_paths.nii.gz")
 
     # ------------------------------
     # Step 3: Build tractography (streamline count) matrix
     # ------------------------------
-    paths = get_adjacency_matrix(
-        coor_roi,
-        tract_path
-        / f"{participant_label}_{session_label}_space-dwifslstd_desc-DWIbiomarker1fdtpaths_dwi.nii.gz",
-    )
+    paths = get_adjacency_matrix(coor_roi, voxelwise, "fdt_paths_lengths.nii.gz")
 
     # Distance correction: multiply by distances
     final_bin = symmetrize(paths) * symmetrize(lengths)
+    del paths
+    del lengths
 
     # Normalize weights
     bct.weight_conversion(final_bin, "normalize", copy=False)
