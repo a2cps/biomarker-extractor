@@ -13,7 +13,6 @@ class DWIBiomarker1Entrypoint(tapismpi.TapisMPIEntrypoint):
     ses_label: typing.Sequence[str]
     bedpostxdir: typing.Sequence[Path]
     roi_dir: Path = Path("/opt/tapis/rois")
-    n_workers: int = 1
 
     def get_args(self, qsiprepdir: Path, outdir: Path, bedpostxdir: Path) -> list[str]:
         return [
@@ -24,7 +23,6 @@ class DWIBiomarker1Entrypoint(tapismpi.TapisMPIEntrypoint):
             str(bedpostxdir),
             str(outdir),
             str(self.roi_dir),
-            str(self.n_workers),
         ]
 
     def check_outputs(self, output_dir_to_check: Path) -> bool:
@@ -67,5 +65,3 @@ class DWIBiomarker1Entrypoint(tapismpi.TapisMPIEntrypoint):
                 sub=self.participant_label[self.RANK],
                 ses=self.ses_label[self.RANK],
             )
-            for voxelwise in out_dir.glob("voxelwise"):
-                shutil.rmtree(voxelwise)

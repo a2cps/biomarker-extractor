@@ -1,13 +1,10 @@
-import re
 from pathlib import Path
 
 import bct
-import nibabel as nb
+import networkx as nx
 import numpy as np
 import polars as pl
 import pydantic
-
-from biomarkers import utils
 
 
 class Module(pydantic.BaseModel):
@@ -17,34 +14,147 @@ class Module(pydantic.BaseModel):
 
 
 MODULE_INFO = (
-    Module(index=1, name="mPFCventral-amyg", is_biomarker=False),
-    Module(index=2, name="OFC-amyg-hipp", is_biomarker=False),
-    Module(index=3, name="mPFCdorsal-amyg-NAc", is_biomarker=True),
+    Module(index=0, name="mPFCventral-amyg", is_biomarker=False),
+    Module(index=1, name="OFC-amyg-hipp", is_biomarker=False),
+    Module(index=2, name="mPFCdorsal-amyg-NAc", is_biomarker=True),
 )
 
 
-def get_adjacency_matrix(coords: np.ndarray, src: Path, pattern: str) -> np.ndarray:
-    # Number of voxels
-    nvox = coords.shape[0]
+def get_weighted_adjacency_matrix(
+    graph: nx.Graph, attribute: str = "value"
+) -> np.ndarray:
+    """
+    Returns a symmetric NumPy matrix representing the weighted adjacency matrix
+    of a NetworkX graph.
 
-    tracts_mat = np.zeros((nvox, nvox), dtype=np.float64)
-    for f in src.rglob(pattern):
-        tracts_img = nb.nifti1.Nifti1Image.load(f).get_fdata()
-        vox = int(re.findall(r"(?<=vox-)\d+", f.name)[0])
-        for i, (x, y, z, _) in enumerate(coords):
-            tracts_mat[i, vox] = tracts_img[x, y, z]
+    Args:
+        graph (nx.Graph): The input NetworkX graph with weighted edges.
 
-    return tracts_mat
+    Returns:
+        np.ndarray: A symmetric NumPy array where the (i, j)-th entry is the
+                      weight of the edge between the i-th and j-th nodes (and
+                      vice versa), and 0 if no edge exists.
+    """
+    n = graph.number_of_nodes()
+    node_to_index = {node: i for i, node in enumerate(graph.nodes())}
+    weighted_adj_matrix = np.zeros((n, n))
+
+    for u, v, data in graph.edges(data=True):
+        u_index = node_to_index[u]
+        v_index = node_to_index[v]
+        weight = data.get(attribute, 0)  # Default to 0 if 'weight' attribute is missing
+        weighted_adj_matrix[u_index, v_index] = weight
+        weighted_adj_matrix[v_index, u_index] = weight  # Ensure symmetry
+
+    return weighted_adj_matrix
 
 
-def symmetrize(adjacency: np.ndarray) -> np.ndarray:
-    # Symmetrize and zero-diagonal
-    adjacency_sym = (adjacency + adjacency.T) / 2.0
-    np.fill_diagonal(adjacency_sym, 0)
-    return adjacency_sym
+def read_matrix1(src: Path) -> pl.DataFrame:
+    return (
+        pl.read_csv(src, has_header=False)
+        .with_columns(
+            pl.col("column_1")
+            .str.split("  ")
+            .list.to_struct(fields=["source", "target", "value"])
+        )
+        .unnest("column_1")
+        .with_columns(
+            pl.col("source").cast(pl.UInt32),
+            pl.col("target").cast(pl.UInt32),
+            pl.col("value").cast(pl.Float64),
+        )
+        .filter(pl.col("source") < pl.col("target"))
+    )
 
 
-def get_summary(mat: np.ndarray) -> pl.DataFrame:
+def read_matrix1_coordinates(src: Path) -> pl.DataFrame:
+    return (
+        pl.read_csv(src, has_header=False)
+        .with_columns(
+            pl.col("column_1")
+            .str.split("  ")
+            .list.to_struct(fields=["x", "y", "z", "roi", "index"])
+        )
+        .unnest("column_1")
+        .with_columns(
+            pl.col("x").cast(pl.UInt32),
+            pl.col("y").cast(pl.UInt32),
+            pl.col("z").cast(pl.UInt32),
+            pl.col("roi").cast(pl.UInt32),
+            pl.col("index").cast(pl.UInt32),
+        )
+    )
+
+
+def read_weighted_matrix1_df(src: Path, target_density: float = 0.1) -> pl.DataFrame:
+    matrix1 = read_matrix1(src / "fdt_matrix1.dot.gz")
+    coordinates = read_matrix1_coordinates(src / "coords_for_fdt_matrix1")
+    d = (
+        coordinates.select("index")
+        .rename({"index": "source"})
+        .join(coordinates.select("index").rename({"index": "target"}), how="cross")
+        .filter(pl.col("source") < pl.col("target"))
+        .join(matrix1, on=["source", "target"], how="left")
+        .fill_null(strategy="zero")
+        .join(
+            coordinates.drop(["x", "y", "z"]).rename({"roi": "roi_source"}),
+            left_on="source",
+            right_on="index",
+            how="left",
+        )
+        .join(
+            coordinates.drop(["x", "y", "z"]).rename({"roi": "roi_target"}),
+            left_on="target",
+            right_on="index",
+            how="left",
+        )
+    )
+    mat = matrix1_to_weighted_adjacency(d)
+    # Normalize weights
+    bct.weight_conversion(mat, "normalize", copy=False)
+    bct.threshold_proportional(mat, target_density, copy=False)
+    mat = (mat > 0).astype(np.float64)
+
+    return (
+        pl.DataFrame(mat)
+        .with_row_index("source", offset=1)
+        .unpivot(index="source", variable_name="target")
+        .with_columns(pl.col("target").str.strip_prefix("column_").cast(pl.UInt32) + 1)
+        .filter(pl.col("source") < pl.col("target"))
+        .join(d.drop("value"), on=["source", "target"], how="left")
+    )
+
+
+def matrix1_to_weighted_adjacency(d: pl.DataFrame) -> np.ndarray:
+    g = nx.from_pandas_edgelist(d.to_pandas(), edge_attr=True)
+    return get_weighted_adjacency_matrix(g)
+
+
+def matrix1_to_adjacency(d: pl.DataFrame) -> np.ndarray:
+    g = nx.from_pandas_edgelist(d.filter(pl.col("value") > 0.5).to_pandas())
+    g.add_nodes_from(d["source"].unique().to_list())
+    return nx.adjacency_matrix(g).toarray()
+
+
+def get_roi_idx_from_df(d: pl.DataFrame, roi: int) -> np.ndarray:
+    return np.flatnonzero(
+        d.select("source", "roi_source")
+        .unique()
+        .sort("source")
+        .select("roi_source")
+        .to_series()
+        .to_numpy()
+        == roi
+    )
+
+
+def matrix1_to_adjacency_subset(d: pl.DataFrame, roi: int) -> np.ndarray:
+    mat = matrix1_to_adjacency(d)
+    roi_idx = get_roi_idx_from_df(d, roi)
+    return mat[np.ix_(roi_idx, roi_idx)]
+
+
+def summarize_adjacency(mat: np.ndarray) -> pl.DataFrame:
     Eglob = bct.efficiency_bin(mat)
     Ccoef = bct.clustering_coef_bu(mat).mean()
     Betw = bct.betweenness_bin(mat).mean()
@@ -67,101 +177,43 @@ def get_summary(mat: np.ndarray) -> pl.DataFrame:
     )
 
 
-def write_adjacency_as_df(adjacency: np.ndarray, dst: Path):
-    utils.mkdir_recursive(dst.parent)
-    (
-        pl.DataFrame(adjacency)
-        .with_row_index("source")
-        .unpivot(index="source", variable_name="target", value_name="connectivity")
-        .with_columns(pl.col("target").str.strip_prefix("column_").cast(pl.UInt32()))
-        .filter(pl.col("target") < pl.col("source"))
-        .write_parquet(dst)
-    )
-
-
 def dwi_biomarker1_flow(
     outdir: Path, sub: str, ses: str, target_density: float = 0.1
 ) -> None:
     participant_label = f"sub-{sub}"
     session_label = f"ses-{ses}"
-    # Paths
-    move_masks = outdir / "move_masks" / participant_label / session_label / "dwi"
-    tract_path = outdir / "probtrackx" / participant_label / session_label / "dwi"
-    voxelwise = outdir / "voxelwise" / participant_label / session_label
 
-    # ------------------------------
-    # Step 1: Load mask and get voxel coordinates
-    # ------------------------------
-    mask_img = nb.nifti1.Nifti1Image.load(
-        move_masks
-        / f"{participant_label}_{session_label}_space-dwifslstd_desc-modules_dseg.nii.gz"
-    )
-    dmask = np.asarray(mask_img.get_fdata(), dtype=np.int64)
-
-    # Collect voxel indices and ROI labels
-    coords = []
-    for roi_id in [x.index for x in MODULE_INFO]:
-        _coords = np.argwhere(dmask == roi_id)
-        coords.append(np.column_stack([_coords, np.repeat(roi_id, _coords.shape[0])]))
-
-    # Combine to coor_roi: x, y, z, roi_id
-    coor_roi = np.vstack(coords)
-
-    # ------------------------------
-    # Step 2: Build distance matrix
-    # ------------------------------
-
-    lengths = get_adjacency_matrix(coor_roi, voxelwise, "fdt_paths.nii.gz")
-
-    # ------------------------------
-    # Step 3: Build tractography (streamline count) matrix
-    # ------------------------------
-    paths = get_adjacency_matrix(coor_roi, voxelwise, "fdt_paths_lengths.nii.gz")
-
-    # Distance correction: multiply by distances
-    final_bin = symmetrize(paths) * symmetrize(lengths)
-    del paths
-    del lengths
-
-    # Normalize weights
-    bct.weight_conversion(final_bin, "normalize", copy=False)
-
-    write_adjacency_as_df(
-        final_bin,
-        outdir / "connectivity" / f"sub={sub}" / f"ses={ses}" / "part-0.parquet",
+    d = read_weighted_matrix1_df(
+        outdir / "probtrackx" / participant_label / session_label / "dwi",
+        target_density=target_density,
     )
 
-    # ------------------------------
-    # Step 4: Threshold to target density and binarize
-    # ------------------------------
-    bct.weight_conversion(
-        bct.threshold_proportional(final_bin, target_density, copy=False),
-        "binarize",
-        copy=False,
-    )
-
-    # ------------------------------
-    # Step 5a: Module-level summary
-    # ------------------------------
+    # Module-level summary
     rows: list[pl.DataFrame] = []
     for module in MODULE_INFO:
-        inds = np.asarray(coor_roi[:, 3] == module.index).nonzero()[0]
-        mat = final_bin[np.ix_(inds, inds)]
+        mat = matrix1_to_adjacency_subset(d, module.index)
         rows.append(
-            get_summary(mat).with_columns(
+            summarize_adjacency(mat).with_columns(
                 ModuleNumber=module.index,
                 ModuleName=pl.lit(module.name),
                 IsBiomarker=module.is_biomarker,
             )
         )
 
-    # ------------------------------
-    # Step 5b: Whole-network summary
-    # ------------------------------
+    # Whole-network summary
     rows.append(
-        get_summary(final_bin).with_columns(
+        summarize_adjacency(matrix1_to_adjacency(d)).with_columns(
             ModuleNumber=0, ModuleName=pl.lit("WholeNetwork"), IsBiomarker=False
         )
     )
     out: pl.DataFrame = pl.concat(rows).with_columns(sub=pl.lit(sub), ses=pl.lit(ses))
-    out.write_csv(tract_path / "network_summaries.tsv", separator="\t")
+    out.lazy().sink_csv(
+        outdir
+        / "networks"
+        / participant_label
+        / session_label
+        / "dwi"
+        / "network_summaries.tsv",
+        separator="\t",
+        mkdir=True,
+    )
