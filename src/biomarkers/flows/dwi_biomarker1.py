@@ -1,3 +1,4 @@
+import logging
 from pathlib import Path
 
 import bct
@@ -183,12 +184,14 @@ def dwi_biomarker1_flow(
     participant_label = f"sub-{sub}"
     session_label = f"ses-{ses}"
 
+    logging.info("reading matrix1")
     d = read_weighted_matrix1_df(
         outdir / "probtrackx" / participant_label / session_label / "dwi",
         target_density=target_density,
     )
 
     # Module-level summary
+    logging.info("summarizing modules")
     rows: list[pl.DataFrame] = []
     for module in MODULE_INFO:
         mat = matrix1_to_adjacency_subset(d, module.index)
@@ -201,12 +204,15 @@ def dwi_biomarker1_flow(
         )
 
     # Whole-network summary
+    logging.info("summarizing network")
     rows.append(
         summarize_adjacency(matrix1_to_adjacency(d)).with_columns(
             ModuleNumber=0, ModuleName=pl.lit("WholeNetwork"), IsBiomarker=False
         )
     )
+    logging.info("concatenating summaries")
     out: pl.DataFrame = pl.concat(rows).with_columns(sub=pl.lit(sub), ses=pl.lit(ses))
+    logging.info("saving summaries")
     out.lazy().sink_csv(
         outdir
         / "networks"
@@ -217,3 +223,4 @@ def dwi_biomarker1_flow(
         separator="\t",
         mkdir=True,
     )
+    logging.info("finished")
