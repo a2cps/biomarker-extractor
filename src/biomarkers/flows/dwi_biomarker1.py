@@ -60,11 +60,12 @@ def read_matrix1(src: Path) -> pl.DataFrame:
         )
         .unnest("column_1")
         .with_columns(
-            pl.col("source").cast(pl.UInt32),
-            pl.col("target").cast(pl.UInt32),
+            pl.col("source").cast(pl.UInt16),
+            pl.col("target").cast(pl.UInt16),
             pl.col("value").cast(pl.Float64),
         )
         .filter(pl.col("source") < pl.col("target"))
+        .with_columns(value=pl.col("value") / pl.col("value").abs().max())
     )
 
 
@@ -77,12 +78,10 @@ def read_matrix1_coordinates(src: Path) -> pl.DataFrame:
             .list.to_struct(fields=["x", "y", "z", "roi", "index"])
         )
         .unnest("column_1")
+        .drop("x", "y", "z")
         .with_columns(
-            pl.col("x").cast(pl.UInt32),
-            pl.col("y").cast(pl.UInt32),
-            pl.col("z").cast(pl.UInt32),
-            pl.col("roi").cast(pl.UInt32),
-            pl.col("index").cast(pl.UInt32),
+            pl.col("roi").cast(pl.UInt8),
+            pl.col("index").cast(pl.UInt16),
         )
     )
 
@@ -91,28 +90,14 @@ def read_weighted_matrix1_df(src: Path, target_density: float = 0.1) -> pl.DataF
     matrix1 = read_matrix1(src / "fdt_matrix1.dot.gz")
     coordinates = read_matrix1_coordinates(src / "coords_for_fdt_matrix1")
     d = (
-        coordinates.select("index")
-        .rename({"index": "source"})
-        .join(coordinates.select("index").rename({"index": "target"}), how="cross")
+        coordinates.rename({"index": "source", "roi": "roi_source"})
+        .join(coordinates.rename({"index": "target", "roi": "roi_target"}), how="cross")
         .filter(pl.col("source") < pl.col("target"))
         .join(matrix1, on=["source", "target"], how="left")
         .fill_null(strategy="zero")
-        .join(
-            coordinates.drop(["x", "y", "z"]).rename({"roi": "roi_source"}),
-            left_on="source",
-            right_on="index",
-            how="left",
-        )
-        .join(
-            coordinates.drop(["x", "y", "z"]).rename({"roi": "roi_target"}),
-            left_on="target",
-            right_on="index",
-            how="left",
-        )
     )
     mat = matrix1_to_weighted_adjacency(d)
     # Normalize weights
-    bct.weight_conversion(mat, "normalize", copy=False)
     bct.threshold_proportional(mat, target_density, copy=False)
     mat = (mat > 0).astype(np.float64)
 
@@ -120,7 +105,10 @@ def read_weighted_matrix1_df(src: Path, target_density: float = 0.1) -> pl.DataF
         pl.DataFrame(mat)
         .with_row_index("source", offset=1)
         .unpivot(index="source", variable_name="target")
-        .with_columns(pl.col("target").str.strip_prefix("column_").cast(pl.UInt32) + 1)
+        .with_columns(
+            pl.col("target").str.strip_prefix("column_").cast(pl.UInt16) + 1,
+            pl.col("source").cast(pl.UInt16),
+        )
         .filter(pl.col("source") < pl.col("target"))
         .join(d.drop("value"), on=["source", "target"], how="left")
     )
