@@ -5,7 +5,6 @@ import networkx as nx
 import numpy as np
 import polars as pl
 import pydantic
-from networkx import algorithms
 
 
 class Module(pydantic.BaseModel):
@@ -74,7 +73,7 @@ def threshold_proportional_bin(
 def read_weighted_matrix1_df(src: Path, target_density: float = 0.1) -> pl.DataFrame:
     matrix1 = read_matrix1(src / "fdt_matrix1.dot.gz")
     coordinates = read_matrix1_coordinates(src / "coords_for_fdt_matrix1")
-    d = (
+    return (
         coordinates.rename({"index": "source", "roi": "roi_source"})
         .join(coordinates.rename({"index": "target", "roi": "roi_target"}), how="cross")
         .filter(pl.col("source") < pl.col("target"))
@@ -83,8 +82,6 @@ def read_weighted_matrix1_df(src: Path, target_density: float = 0.1) -> pl.DataF
         .pipe(threshold_proportional_bin, target_density)
         .with_columns(pl.col("source") - 1, pl.col("target") - 1)
     )
-
-    return d
 
 
 def matrix1_to_graph(d: pl.DataFrame) -> nx.Graph:
@@ -112,26 +109,11 @@ def matrix1_to_subset(d: pl.DataFrame, roi: int) -> nx.Graph:
 
 
 def summarize_adjacency(g: nx.Graph) -> pl.DataFrame:
-    Eglob = algorithms.global_efficiency(g)
-    Ccoefs = algorithms.clustering(g)
-    if not isinstance(Ccoefs, dict):
-        msg = "ccoefs should be dict"
-        raise AssertionError(msg)
-    Ccoef = np.array(list(Ccoefs.values())).mean()
-    Betws = algorithms.betweenness_centrality(g)
     Degs: list[int] = list(dict(g.degree).values())  # type: ignore
     nvox = len(g.nodes)
     WM_conn = np.sum(Degs) / (nvox * (nvox - 1) / 2)
     return pl.DataFrame(
-        {
-            "Eglob": Eglob,
-            "Ccoef": Ccoef,
-            "Betw": np.mean(list(Betws.values())),
-            "Dist": 1.0 / Eglob,
-            "Deg_mean": np.mean(Degs),
-            "Density": nx.density(g),
-            "WM_connections": WM_conn,
-        }
+        {"Deg_mean": np.mean(Degs), "Density": nx.density(g), "WM_connections": WM_conn}
     )
 
 
@@ -164,7 +146,7 @@ def dwi_biomarker1_flow(
     logging.info("summarizing network")
     rows.append(
         summarize_adjacency(matrix1_to_graph(d)).with_columns(
-            ModuleNumber=0, ModuleName=pl.lit("WholeNetwork"), IsBiomarker=False
+            ModuleNumber=None, ModuleName=pl.lit("WholeNetwork"), IsBiomarker=False
         )
     )
     logging.info("concatenating summaries")
