@@ -1,6 +1,4 @@
 import asyncio
-import ctypes
-import gc
 import logging
 import os
 import shutil
@@ -18,11 +16,6 @@ from mpi4py import MPI
 from biomarkers import utils
 
 T = typing.TypeVar("T")
-
-
-def trim_memory() -> int:
-    libc = ctypes.CDLL("libc.so.6")
-    return libc.malloc_trim(0)
 
 
 def copy_tapis_files(outdir: Path) -> None:
@@ -156,10 +149,6 @@ class TapisMPIEntrypoint(pydantic.BaseModel):
                     await asyncio.wait_for(
                         self.run_flow(tmpd_in, tmpd_out), timeout=self.timeout
                     )
-                    # in the mpi environment, it seems like the regular heuristics aren't accurate
-                    # so a manual trigger helps substantially
-                    gc.collect()
-                    trim_memory()
                 except Exception:
                     logging.exception("Flow failed")
                 finally:

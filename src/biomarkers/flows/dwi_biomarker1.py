@@ -23,23 +23,27 @@ MODULE_INFO = (
 
 def read_matrix1(src: Path) -> pl.DataFrame:
     # need to symmetrize because probtrackx stores
-    # both source -> target and target -> source,
-    # but only one of each edge
+    # both source -> target and target -> source
     i, j, value = np.loadtxt(src).T
-    coo = sparse.coo_array((value, (np.astype(i - 1, int), np.astype(j - 1, int))))
-    coo += coo.T
-    coo /= 2
-    return (
-        pl.DataFrame(coo.todense())
-        .with_row_index("source")
-        .unpivot(index="source", variable_name="target")
-        .with_columns(
-            pl.col("target").str.strip_prefix("column_").cast(pl.UInt16) + 1,
-            pl.col("source").cast(pl.UInt16) + 1,
+    # multiply by 2 because probtrackx stores either integers
+    # or half numbers, so x2 brings us to integers. This is good
+    # because the only 16-bit dtype sparse arrays allow are integers
+    coo = sparse.coo_array(
+        (
+            np.astype(value * 2, np.uint16),
+            (np.astype(i - 1, np.uint16), np.astype(j - 1, np.uint16)),
         )
-        .filter(pl.col("source") < pl.col("target"))
-        .with_columns(value=pl.col("value") / pl.col("value").abs().max())
     )
+    # not worrying about normalizing
+    coo += coo.T
+    # unpivoting would hog memory, so creating index manually
+    return pl.DataFrame(
+        {
+            "value": coo.todense().ravel(),
+            "source": np.repeat(np.arange(coo.shape[0], dtype=np.uint16), coo.shape[1]),
+            "target": np.tile(np.arange(coo.shape[1], dtype=np.uint16), coo.shape[0]),
+        }
+    ).filter(pl.col("source") < pl.col("target"))
 
 
 def read_matrix1_coordinates(src: Path) -> pl.DataFrame:
@@ -52,20 +56,18 @@ def read_matrix1_coordinates(src: Path) -> pl.DataFrame:
         )
         .unnest("column_1")
         .drop("x", "y", "z")
-        .with_columns(pl.col("roi").cast(pl.UInt8), pl.col("index").cast(pl.UInt16))
+        .with_columns(pl.col("roi").cast(pl.UInt8), pl.col("index").cast(pl.UInt16) - 1)
     )
 
 
 def threshold_proportional_bin(
-    d: pl.DataFrame, target_density: float = 0.1
+    d: pl.DataFrame, target_density: float = 0.1, col="value"
 ) -> pl.DataFrame:
-    density: float = (d["value"] > 0).mean()  # type: ignore
+    density: float = (d[col] > 0).mean()  # type: ignore
     if density <= target_density:
-        return d.with_columns(pl.col("value").cast(pl.Boolean))
+        return d.with_columns(pl.col(col).cast(pl.Boolean))
 
-    return d.with_columns(
-        value=pl.col("value") > pl.col("value").quantile(1 - target_density)
-    )
+    return d.with_columns(value=pl.col(col) > pl.col(col).quantile(1 - target_density))
 
 
 def read_weighted_matrix1_df(src: Path, target_density: float = 0.1) -> pl.DataFrame:
@@ -83,7 +85,6 @@ def read_weighted_matrix1_df(src: Path, target_density: float = 0.1) -> pl.DataF
             right_on="index",
         )
         .pipe(threshold_proportional_bin, target_density)
-        .with_columns(pl.col("source") - 1, pl.col("target") - 1)
     )
 
 
@@ -94,14 +95,12 @@ def matrix1_to_graph(d: pl.DataFrame) -> nx.Graph:
 
 
 def get_roi_idx_from_df(d: pl.DataFrame, roi: int) -> np.ndarray:
-    return np.flatnonzero(
-        d.select("source", "roi_source")
+    return (
+        d.filter(pl.col("roi_source") == roi)
+        .select("source")
         .unique()
-        .sort("source")
-        .select("roi_source")
         .to_series()
         .to_numpy()
-        == roi
     )
 
 
@@ -111,9 +110,9 @@ def matrix1_to_subset(d: pl.DataFrame, roi: int) -> nx.Graph:
     return g.subgraph(roi_idx)
 
 
-def summarize_adjacency(g: nx.Graph) -> pl.DataFrame:
+def summarize_graph(g: nx.Graph) -> pl.DataFrame:
     Degs: list[int] = list(dict(g.degree).values())  # type: ignore
-    nvox = len(g.nodes)
+    nvox = g.number_of_nodes()
     WM_conn = np.sum(Degs) / (nvox * (nvox - 1) / 2)
     return pl.DataFrame(
         {"Deg_mean": np.mean(Degs), "Density": nx.density(g), "WM_connections": WM_conn}
@@ -136,9 +135,8 @@ def dwi_biomarker1_flow(
     logging.info("summarizing modules")
     rows: list[pl.DataFrame] = []
     for module in MODULE_INFO:
-        g = matrix1_to_subset(d, module.index)
         rows.append(
-            summarize_adjacency(g).with_columns(
+            summarize_graph(matrix1_to_subset(d, module.index)).with_columns(
                 ModuleNumber=module.index,
                 ModuleName=pl.lit(module.name),
                 IsBiomarker=module.is_biomarker,
@@ -148,7 +146,7 @@ def dwi_biomarker1_flow(
     # Whole-network summary
     logging.info("summarizing network")
     rows.append(
-        summarize_adjacency(matrix1_to_graph(d)).with_columns(
+        summarize_graph(matrix1_to_graph(d)).with_columns(
             ModuleNumber=None, ModuleName=pl.lit("WholeNetwork"), IsBiomarker=False
         )
     )
