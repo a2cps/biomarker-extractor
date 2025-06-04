@@ -1,4 +1,5 @@
 import asyncio
+import gc
 import logging
 import os
 import shutil
@@ -149,6 +150,9 @@ class TapisMPIEntrypoint(pydantic.BaseModel):
                     await asyncio.wait_for(
                         self.run_flow(tmpd_in, tmpd_out), timeout=self.timeout
                     )
+                    # in the mpi environment, it seems like the regular heuristics aren't accurate
+                    # so a manual trigger helps substantially
+                    gc.collect()
                 except Exception:
                     logging.exception("Flow failed")
                 finally:
