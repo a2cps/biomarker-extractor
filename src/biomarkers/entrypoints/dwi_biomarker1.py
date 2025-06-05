@@ -13,7 +13,6 @@ class DWIBiomarker1Entrypoint(tapismpi.TapisMPIEntrypoint):
     ses_label: typing.Sequence[str]
     bedpostxdir: typing.Sequence[Path]
     roi_dir: Path = Path("/opt/tapis/rois")
-    n_workers: int = 1
 
     def get_args(self, qsiprepdir: Path, outdir: Path, bedpostxdir: Path) -> list[str]:
         return [
@@ -24,11 +23,12 @@ class DWIBiomarker1Entrypoint(tapismpi.TapisMPIEntrypoint):
             str(bedpostxdir),
             str(outdir),
             str(self.roi_dir),
-            str(self.n_workers),
         ]
 
     def check_outputs(self, output_dir_to_check: Path) -> bool:
-        return (output_dir_to_check / "probtrackx").exists()
+        return (output_dir_to_check / "probtrackx").exists() and (
+            len(list((output_dir_to_check).rglob("*tsv"))) == 1
+        )
 
     def prep(self, tmpd_in: Path) -> Path:
         tmp_bedpostx_dirs: dict[int, Path] = dict()
@@ -60,8 +60,8 @@ class DWIBiomarker1Entrypoint(tapismpi.TapisMPIEntrypoint):
                 msg = f"bedpostx failed with {proc.returncode=}"
                 raise RuntimeError(msg)
 
-            dwi_bm1_flow.dwi_biomarker1_flow(
-                outdir=out_dir,
-                sub=self.participant_label[self.RANK],
-                ses=self.ses_label[self.RANK],
-            )
+        dwi_bm1_flow.dwi_biomarker1_flow(
+            outdir=out_dir,
+            sub=self.participant_label[self.RANK],
+            ses=self.ses_label[self.RANK],
+        )
