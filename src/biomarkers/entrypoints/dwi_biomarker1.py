@@ -60,8 +60,8 @@ class DWIBiomarker1Entrypoint(tapismpi.TapisMPIEntrypoint):
                 msg = f"bedpostx failed with {proc.returncode=}"
                 raise RuntimeError(msg)
 
-            dwi_bm1_flow.dwi_biomarker1_flow(
-                outdir=out_dir,
-                sub=self.participant_label[self.RANK],
-                ses=self.ses_label[self.RANK],
-            )
+        dwi_bm1_flow.dwi_biomarker1_flow(
+            outdir=out_dir,
+            sub=self.participant_label[self.RANK],
+            ses=self.ses_label[self.RANK],
+        )
