@@ -234,3 +234,23 @@ def get_fan_atlas(resolution: FanResolution = 2) -> Labels:
     atlas = get_fan_atlas_nii_file(resolution=resolution)
     labels = get_fan_atlas_lut()
     return Labels(labels_img=atlas, labels=labels)
+
+
+def get_s1m1() -> Path:
+    with resources.as_file(
+        resources.files("biomarkers.data").joinpath(
+            "MAPP_S1-SLN_cluster_bin_in_MNI152NLin2009cAsym_brain.nii.gz"
+        )
+    ) as f:
+        s1m1 = f
+    return s1m1
+
+
+def get_s1() -> Path:
+    with resources.as_file(
+        resources.files("biomarkers.data").joinpath(
+            "desc-smoothed10bystudy999_S1.nii.gz"
+        )
+    ) as f:
+        s1 = f
+    return s1
