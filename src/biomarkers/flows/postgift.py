@@ -99,7 +99,7 @@ def timecourse_from_mat(mat: Path) -> Path:
         / f"sub-{sub}"
         / f"ses-{ses}"
         / "func"
-        / f"sub-{sub}_ses-{ses}_task-{task}_run-{run}_bold_timecourses.nii.gz"
+        / f"sub-{sub}_ses-{ses}_task-{task}_run-{run}_bold_timecourses.nii"
     )
 
 
