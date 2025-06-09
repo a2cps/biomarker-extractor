@@ -99,19 +99,15 @@ def timecourse_from_mat(mat: Path) -> Path:
         / f"sub-{sub}"
         / f"ses-{ses}"
         / "func"
-        / f"sub-{sub}_ses-{ses}_task-{task}_run-{run}_bold_timecourses.nii"
+        / f"sub-{sub}_ses-{ses}_task-{task}_run-{run}_bold_timecourses.nii.gz"
     )
 
 
 def postgift_flow(indir: Path, outdir: Path) -> None:
-    for model in [
-        "gift-neuromark_fmri_2.1_modelorder-multi",
-        "gift-neuromark_fmri_2.0_modelorder-175",
-    ]:
-        for f in indir.rglob("*sub_001.mat"):
-            logging.info(f"Extracting IDPs from {f}")
-            extract_fcn_corrs(f, outdir)
-            extract_falff(f, outdir)
+    for f in indir.rglob("*sub_001.mat"):
+        logging.info(f"Extracting IDPs from {f}")
+        extract_fcn_corrs(f, outdir)
+        extract_falff(f, outdir)
 
     biomarkers = {
         "sub": [],
@@ -122,7 +118,12 @@ def postgift_flow(indir: Path, outdir: Path) -> None:
         "dmn_s1": [],
         "sln_s1m1": [],
     }
-    for f in indir.rglob("*modelorder-multi_post_process_sub_001.mat"):
+    for f in (
+        indir
+        / "derivatives"
+        / "gift-neuromark_fmri_2.1_modelorder-multi"
+        / "derivatives"
+    ).rglob("*sub_001.mat"):
         logging.info(f"Adding biomarkers from {f}")
         biomarkers["sub"].append(np.uint16(utils.get_sub(f)))
         biomarkers["ses"].append(utils.get_ses(f))
