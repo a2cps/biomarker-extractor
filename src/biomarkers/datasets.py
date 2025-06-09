@@ -1,4 +1,8 @@
 import typing
+import xml
+import xml.etree
+import xml.etree.ElementTree
+import xml.etree.ElementTree as ET
 from importlib import resources
 from pathlib import Path
 
@@ -254,3 +258,40 @@ def get_s1() -> Path:
     ) as f:
         s1 = f
     return s1
+
+
+def get_jhu_dti() -> Path:
+    with resources.as_file(
+        resources.files("biomarkers.data").joinpath(
+            "JHU-ICBM-labels-1mm_in_MNI152NLin2009cAsym.nii.gz"
+        )
+    ) as f:
+        s1 = f
+    return s1
+
+
+def get_jhu_lut_file() -> Path:
+    with resources.as_file(
+        resources.files("biomarkers.data").joinpath("JHU-labels.xml")
+    ) as f:
+        labels = f
+    return labels
+
+
+def get_jhu_lut() -> pl.DataFrame:
+    doc = ET.parse(get_jhu_lut_file()).getroot().find("data")
+    if not isinstance(doc, xml.etree.ElementTree.Element):
+        msg = "Missing JHU LUT"
+        raise AssertionError(msg)
+    labels = {"index": [], "roi": []}
+    for label in doc[1:]:
+        labels["index"].append(int(label.attrib["index"]))
+        labels["roi"].append(label.text)
+
+    return pl.DataFrame(labels, schema_overrides={"index": pl.UInt8})
+
+
+def get_jhu_atlas() -> Labels:
+    atlas = get_jhu_dti()
+    labels = get_jhu_lut()
+    return Labels(labels_img=atlas, labels=labels)
