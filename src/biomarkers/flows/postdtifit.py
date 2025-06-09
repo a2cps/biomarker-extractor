@@ -20,7 +20,7 @@ def conform_orientation(f: Path) -> Path:
     return f
 
 
-async def transform_jhu_labels(transform: Path, reference: Path, dst: Path) -> None:
+async def transform_jhu_labels(transform: Path, reference: Path, dst: Path) -> Path:
     logging.info("Transforming labels to native space")
     utils.mkdir_recursive(dst.parent)
     async with utils.subprocess_manager(
@@ -44,7 +44,7 @@ async def transform_jhu_labels(transform: Path, reference: Path, dst: Path) -> N
         await proc.wait()
 
     logging.info("Conforming orientation of transformed labels")
-    conform_orientation(dst)
+    return conform_orientation(dst)
 
 
 async def postdtifit_flow(
@@ -64,7 +64,12 @@ async def postdtifit_flow(
         / f"ses-{ses}"
         / "dwi"
         / f"sub-{sub}_ses-{ses}_space-T1w_dwiref.nii.gz",
-        dst=outdir / f"sub-{sub}_ses-{ses}_space-dwi_desc-JHUICBM_dseg.nii.gz",
+        dst=outdir
+        / "dtifitatlas"
+        / f"sub-{sub}"
+        / f"ses-{ses}"
+        / "dwi"
+        / f"sub-{sub}_ses-{ses}_space-dwi_desc-JHUICBM_dseg.nii.gz",
     )
 
     logging.info("Extracting DTI metrics")
