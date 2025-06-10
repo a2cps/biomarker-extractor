@@ -48,11 +48,7 @@ async def transform_jhu_labels(transform: Path, reference: Path, dst: Path) -> P
 
 
 async def postdtifit_flow(
-    dtifit: Path,
-    qsiprep: Path,
-    outdir: Path,
-    sub: str,
-    ses: str,
+    dtifit: Path, qsiprep: Path, outdir: Path, sub: str, ses: str
 ) -> None:
     labels_img = await transform_jhu_labels(
         transform=qsiprep
@@ -65,15 +61,15 @@ async def postdtifit_flow(
         / "dwi"
         / f"sub-{sub}_ses-{ses}_space-T1w_dwiref.nii.gz",
         dst=outdir
-        / "dtifitatlas"
+        / "dtifit_regional"
         / f"sub-{sub}"
         / f"ses-{ses}"
         / "dwi"
-        / f"sub-{sub}_ses-{ses}_space-dwi_desc-JHUICBM_dseg.nii.gz",
+        / f"sub-{sub}_ses-{ses}_space-dwifslstd_desc-JHUICBM_dseg.nii.gz",
     )
 
     logging.info("Extracting DTI metrics")
-    jhu_dti = datasets.get_jhu_atlas()
+    jhu_dti = datasets.get_jhu_lut()
     out: list[pl.DataFrame] = []
     for stat in ["mean", "minimum", "maximum"]:
         masker = maskers.NiftiLabelsMasker(labels_img=labels_img, strategy=stat)
@@ -101,11 +97,13 @@ async def postdtifit_flow(
                         ses=pl.lit(ses),
                         shells=pl.lit(shells),
                     )
-                    .join(jhu_dti.labels, on=["index"])
+                    .join(jhu_dti, on=["index"])
                 )
 
     logging.info("Saving dti metrics")
     pl.concat(out).pivot(on="stat", values="value").lazy().sink_parquet(
-        pl.PartitionByKey(outdir / "dtimetrics", by=[pl.col.sub, pl.col.ses]),
+        pl.PartitionByKey(
+            outdir / "dtifit_regional_stats", by=[pl.col.sub, pl.col.ses]
+        ),
         mkdir=True,
     )
