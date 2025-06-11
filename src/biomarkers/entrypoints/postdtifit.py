@@ -13,7 +13,7 @@ class PostDTIFitEntrypoint(tapismpi.TapisMPIEntrypoint):
     qsiprepdir: typing.Sequence[Path]
 
     def check_outputs(self, output_dir_to_check: Path) -> bool:
-        return (output_dir_to_check / "dtimetrics").exists()
+        return (output_dir_to_check / "dtifit_regional_stats").exists()
 
     def prep(self, tmpd_in: Path) -> Path:
         tmp_qsiprep_dirs: dict[int, Path] = dict()
