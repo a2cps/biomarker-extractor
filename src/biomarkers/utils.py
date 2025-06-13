@@ -1,5 +1,6 @@
 import asyncio
 import contextlib
+import ctypes
 import gzip
 import logging
 import os
@@ -58,6 +59,11 @@ def configure_root_logger() -> None:
         level=logging.INFO,
         force=True,
     )
+
+
+def trim_memory() -> int:
+    libc = ctypes.CDLL("libc.so.6")
+    return libc.malloc_trim(0)
 
 
 def img_stem(img: Path) -> str:

@@ -1,3 +1,4 @@
+import gc
 import logging
 from pathlib import Path
 
@@ -48,43 +49,36 @@ def model_from_path(f: Path) -> float:
     return 2.1 if "neuromark_fmri_2.1" in str(f) else 2.0
 
 
-def extract_fcn_corrs(f: Path, outdir: Path) -> None:
+def extract_fcn_corrs(f: Path) -> pl.DataFrame:
     postprocess = io.loadmat(f, squeeze_me=True, variable_names=["fnc_corrs"])
-    pl.DataFrame(postprocess["fnc_corrs"]).lazy().with_columns(
-        source=pl.int_range(pl.len(), dtype=pl.UInt16)
-    ).unpivot(
-        index="source", variable_name="target", value_name="connectivity"
-    ).with_columns(pl.col("target").str.strip_prefix("column_").cast(pl.UInt16)).filter(
-        pl.col("source") < pl.col("target")
-    ).with_columns(
-        sub=pl.lit(utils.get_sub(f)),
-        ses=pl.lit(utils.get_ses(f)),
-        task=pl.lit(utils.get_entity(f, "(?<=task-)[a-z]+")),
-        run=int(utils.get_entity(f, r"(?<=run-)\d+")),
-        model=model_from_path(f),
-    ).sink_parquet(
-        pl.PartitionByKey(
-            outdir / "connectivity", by=[pl.col.sub, pl.col.ses, pl.col.model]
-        ),
-        mkdir=True,
+    return (
+        pl.DataFrame(postprocess["fnc_corrs"])
+        .with_columns(source=pl.int_range(pl.len(), dtype=pl.UInt16))
+        .unpivot(index="source", variable_name="target", value_name="connectivity")
+        .with_columns(pl.col("target").str.strip_prefix("column_").cast(pl.UInt16))
+        .filter(pl.col("source") < pl.col("target"))
+        .with_columns(
+            sub=pl.lit(utils.get_sub(f)),
+            ses=pl.lit(utils.get_ses(f)),
+            task=pl.lit(utils.get_entity(f, "(?<=task-)[a-z]+")),
+            run=int(utils.get_entity(f, r"(?<=run-)\d+")),
+            model=model_from_path(f),
+        )
     )
 
 
-def extract_falff(f: Path, outdir: Path) -> None:
+def extract_falff(f: Path) -> pl.DataFrame:
     postprocess = io.loadmat(f, squeeze_me=True, variable_names=["fALFF"])
-    pl.DataFrame(postprocess["fALFF"], schema=["fALFF"]).lazy().with_columns(
-        component=pl.int_range(pl.len(), dtype=pl.UInt16)
-    ).with_columns(
-        sub=pl.lit(utils.get_sub(f)),
-        ses=pl.lit(utils.get_ses(f)),
-        task=pl.lit(utils.get_entity(f, "(?<=task-)[a-z]+")),
-        run=int(utils.get_entity(f, r"(?<=run-)\d+")),
-        model=model_from_path(f),
-    ).sink_parquet(
-        pl.PartitionByKey(
-            outdir / "amplitude", by=[pl.col.sub, pl.col.ses, pl.col.model]
-        ),
-        mkdir=True,
+    return (
+        pl.DataFrame(postprocess["fALFF"], schema=["fALFF"])
+        .with_columns(component=pl.int_range(pl.len(), dtype=pl.UInt16))
+        .with_columns(
+            sub=pl.lit(utils.get_sub(f)),
+            ses=pl.lit(utils.get_ses(f)),
+            task=pl.lit(utils.get_entity(f, "(?<=task-)[a-z]+")),
+            run=int(utils.get_entity(f, r"(?<=run-)\d+")),
+            model=model_from_path(f),
+        )
     )
 
 
@@ -104,10 +98,25 @@ def timecourse_from_mat(mat: Path) -> Path:
 
 
 def postgift_flow(indir: Path, outdir: Path) -> None:
+    fcns: list[pl.DataFrame] = []
+    falffs: list[pl.DataFrame] = []
     for f in indir.rglob("*sub_001.mat"):
         logging.info(f"Extracting IDPs from {f}")
-        extract_fcn_corrs(f, outdir)
-        extract_falff(f, outdir)
+        fcns.append(extract_fcn_corrs(f))
+        falffs.append(extract_falff(f))
+
+    pl.concat(falffs).lazy().sink_parquet(
+        pl.PartitionByKey(
+            outdir / "amplitude", by=[pl.col.sub, pl.col.ses, pl.col.model]
+        ),
+        mkdir=True,
+    )
+    pl.concat(fcns).lazy().sink_parquet(
+        pl.PartitionByKey(
+            outdir / "connectivity", by=[pl.col.sub, pl.col.ses, pl.col.model]
+        ),
+        mkdir=True,
+    )
 
     biomarkers = {
         "sub": [],
@@ -128,7 +137,7 @@ def postgift_flow(indir: Path, outdir: Path) -> None:
         biomarkers["sub"].append(np.uint16(utils.get_sub(f)))
         biomarkers["ses"].append(utils.get_ses(f))
         biomarkers["task"].append(utils.get_entity(f, r"(?<=task-)[a-z]+"))
-        biomarkers["run"].append(utils.get_entity(f, r"(?<=run-)\d+"))
+        biomarkers["run"].append(np.uint8(utils.get_entity(f, r"(?<=run-)\d+")))
 
         timecourse = timecourse_from_mat(f)
         nii = reconstruct_nifti(timecourse)
@@ -138,11 +147,15 @@ def postgift_flow(indir: Path, outdir: Path) -> None:
                 timecourse, nii, DMN_COMPONENT, map=datasets.get_s1()
             )
         )
+        gc.collect()
+        utils.trim_memory()
         biomarkers["sln_s1m1"].append(
             extract_component_map_connectivity(
                 timecourse, nii, SLN_COMPONENT, map=datasets.get_s1m1()
             )
         )
+        gc.collect()
+        utils.trim_memory()
 
     pl.DataFrame(biomarkers).lazy().sink_parquet(
         pl.PartitionByKey(outdir / "biomarkers", by=[pl.col.sub, pl.col.ses]),
