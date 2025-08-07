@@ -10,19 +10,28 @@ from biomarkers.models import fmriprep as fmriprep_models
 
 
 def get_synthstrip_args(
-    src: Path, model: Path, mask: Path, n_workers: int | None = None
+    src: Path,
+    model: Path,
+    mask: Path,
+    n_workers: int | None = None,
+    no_csf: bool = False,
 ) -> list[str]:
-    return [
-        "synthstrip",
-        "-i",
-        str(src),
-        "-m",
-        str(mask),
-        "-n",
-        str(n_workers if n_workers else 1),
-        "--model",
-        str(model),
-    ]
+    return (
+        [
+            "synthstrip",
+            "-i",
+            str(src),
+            "-m",
+            str(mask),
+            "-n",
+            str(n_workers if n_workers else 1),
+            "--model",
+            str(model),
+        ]
+        + ["--no-csf"]
+        if no_csf
+        else []
+    )
 
 
 def extend_arg(
@@ -51,6 +60,7 @@ class FMRIPRepEntrypoint(tapismpi.TapisMPIEntrypoint):
         fmriprep_models.OUTPUT_SPACE
     )
     anat_only: typing.Sequence[bool] | None = None
+    no_csf: bool = False
 
     def check_outputs(self, output_dir_to_check: Path) -> bool:
         return output_dir_to_check.exists() and (
@@ -109,6 +119,7 @@ class FMRIPRepEntrypoint(tapismpi.TapisMPIEntrypoint):
                 model=self.synthstrip_model,
                 mask=mask,
                 n_workers=self.n_workers,
+                no_csf=self.no_csf,
             ),
         ) as proc:
             await proc.wait()
