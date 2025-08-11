@@ -16,22 +16,20 @@ def get_synthstrip_args(
     n_workers: int | None = None,
     no_csf: bool = False,
 ) -> list[str]:
-    return (
-        [
-            "synthstrip",
-            "-i",
-            str(src),
-            "-m",
-            str(mask),
-            "-n",
-            str(n_workers if n_workers else 1),
-            "--model",
-            str(model),
-        ]
-        + ["--no-csf"]
-        if no_csf
-        else []
-    )
+    args = [
+        "synthstrip",
+        "-i",
+        str(src),
+        "-m",
+        str(mask),
+        "-n",
+        str(n_workers if n_workers else 1),
+        "--model",
+        str(model),
+    ]
+    if no_csf:
+        args.append("--no-csf")
+    return args
 
 
 def extend_arg(
