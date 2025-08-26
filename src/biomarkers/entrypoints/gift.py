@@ -3,9 +3,8 @@ import shutil
 import tempfile
 from pathlib import Path
 
-import nibabel as nb
-import numpy as np
 from nibabel import processing
+from nilearn import image
 
 from biomarkers import utils
 from biomarkers.entrypoints import tapismpi
@@ -31,7 +30,7 @@ def make_1_run_bids(src: Path, dst: Path, bold: Path) -> None:
 
 class GIFTEntrypoint(tapismpi.TapisMPIEntrypoint):
     configs: dict[str, Path]
-    voxel_size: float = 2.0
+    template: Path
     smooth_fwhm: float = 6.0
 
     def check_outputs(self, output_dir_to_check: Path) -> bool:
@@ -63,10 +62,7 @@ class GIFTEntrypoint(tapismpi.TapisMPIEntrypoint):
                         raise RuntimeError(msg)
 
                 shutil.copytree(
-                    tmpd,
-                    gift_dir,
-                    dirs_exist_ok=True,
-                    copy_function=shutil.copyfile,
+                    tmpd, gift_dir, dirs_exist_ok=True, copy_function=shutil.copyfile
                 )
                 gift_dir.chmod(utils.DIR_PERMISSIONS)
                 # gift offers no control over the creation of the folder
@@ -89,20 +85,10 @@ class GIFTEntrypoint(tapismpi.TapisMPIEntrypoint):
 
     def prep(self, to_prep: Path):
         for bold in to_prep.rglob("*MNI*bold.nii.gz"):
-            nii = nb.nifti1.load(bold)
-            if not all(np.isclose(nii.header.get_zooms()[:3], self.voxel_size)):
-                logging.info(f"resampling {bold}")
-                resampled = nb.funcs.concat_images(
-                    [
-                        processing.resample_to_output(
-                            nii.slicer[:, :, :, vol], voxel_sizes=self.voxel_size
-                        )
-                        for vol in range(nii.shape[-1])
-                    ]
-                )
-            else:
-                logging.info(f"no need for resampling {bold}")
-                resampled = nii
+            logging.info(f"resampling {bold}")
+            resampled = image.resample_to_img(
+                bold, self.template, copy_header=True, force_resample=True
+            )
             logging.info(f"smoothing {bold}")
             processing.smooth_image(resampled, self.smooth_fwhm).to_filename(bold)
 
