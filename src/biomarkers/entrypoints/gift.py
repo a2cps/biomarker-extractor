@@ -106,9 +106,8 @@ class GIFTEntrypoint(tapismpi.TapisMPIEntrypoint):
 
             logging.info(f"smoothing {bold}")
             image.clean_img(
-                imgs=bold,
+                imgs=image.smooth_img(resampled, fwhm=self.smooth_fwhm),
                 t_r=utils.get_tr(resampled),
-                smoothing_fwhm=self.smooth_fwhm,
                 low_pass=self.low_pass,
                 detrend=True,
                 standardize=False,
