@@ -3,6 +3,8 @@ import shutil
 import tempfile
 from pathlib import Path
 
+import nibabel as nb
+import numpy as np
 from nibabel import processing
 from nilearn import image
 
@@ -32,6 +34,8 @@ class GIFTEntrypoint(tapismpi.TapisMPIEntrypoint):
     configs: dict[str, Path]
     template: Path
     smooth_fwhm: float = 6.0
+    voxel_size: float = 2.0
+    low_pass: float = 0.15
 
     def check_outputs(self, output_dir_to_check: Path) -> bool:
         return (output_dir_to_check / "gift").exists()
@@ -85,12 +89,31 @@ class GIFTEntrypoint(tapismpi.TapisMPIEntrypoint):
 
     def prep(self, to_prep: Path):
         for bold in to_prep.rglob("*MNI*bold.nii.gz"):
-            logging.info(f"resampling {bold}")
-            resampled = image.resample_to_img(
-                bold, self.template, copy_header=True, force_resample=True
-            )
+            nii = nb.nifti1.Nifti1Image.load(bold)
+            if not all(np.isclose(nii.header.get_zooms()[:3], self.voxel_size)):
+                logging.info(f"resampling {bold}")
+                resampled: nb.nifti1.Nifti1Image = nb.funcs.concat_images(  # type:ignore
+                    [
+                        processing.resample_to_output(
+                            nii.slicer[:, :, :, vol], voxel_sizes=self.voxel_size
+                        )
+                        for vol in range(nii.shape[-1])
+                    ]
+                )
+            else:
+                logging.info(f"no need for resampling {bold}")
+                resampled = nii
+
             logging.info(f"smoothing {bold}")
-            processing.smooth_image(resampled, self.smooth_fwhm).to_filename(bold)
+            image.clean_img(
+                imgs=bold,
+                t_r=utils.get_tr(resampled),
+                smoothing_fwhm=self.smooth_fwhm,
+                low_pass=self.low_pass,
+                detrend=True,
+                standardize=False,
+                clean__extrapolate=False,
+            ).to_filename(bold)
 
         # GIFT fails to recognize space-* files as relevant, so need to simplify names
         # loop involves renaming so must generator to list
