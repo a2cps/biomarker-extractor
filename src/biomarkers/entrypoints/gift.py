@@ -32,7 +32,6 @@ def make_1_run_bids(src: Path, dst: Path, bold: Path) -> None:
 
 class GIFTEntrypoint(tapismpi.TapisMPIEntrypoint):
     configs: dict[str, Path]
-    template: Path
     smooth_fwhm: float = 6.0
     voxel_size: float = 2.0
     low_pass: float = 0.15
