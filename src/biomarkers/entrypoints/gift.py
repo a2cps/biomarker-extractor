@@ -3,13 +3,30 @@ import shutil
 import tempfile
 from pathlib import Path
 
-import nibabel as nb
-import numpy as np
-from nibabel import processing
 from nilearn import image
 
 from biomarkers import utils
 from biomarkers.entrypoints import tapismpi
+
+
+def get_template_from_config(config: Path) -> Path:
+    lines = config.read_text().splitlines()
+    for line in lines:
+        if "refFiles" in line:
+            reffile = Path(
+                line.removeprefix("refFiles")
+                .replace("=", "")
+                .removesuffix(";")
+                .replace("'", "")
+            )
+            if not reffile.exists():
+                msg = "refFiles extracted but does not exist"
+                raise RuntimeError(msg)
+
+            return reffile
+
+    msg = "refFiles not found"
+    raise RuntimeError(msg)
 
 
 def make_1_run_bids(src: Path, dst: Path, bold: Path) -> None:
@@ -35,6 +52,9 @@ class GIFTEntrypoint(tapismpi.TapisMPIEntrypoint):
     smooth_fwhm: float = 6.0
     voxel_size: float = 2.0
     low_pass: float = 0.15
+    template: Path = Path("/opt/gift/Neuromark_fMRI_2.1_modelorder-multi.nii")
+
+    _ref: Path | None = None
 
     def check_outputs(self, output_dir_to_check: Path) -> bool:
         return (output_dir_to_check / "gift").exists()
@@ -88,20 +108,10 @@ class GIFTEntrypoint(tapismpi.TapisMPIEntrypoint):
 
     def prep(self, to_prep: Path):
         for bold in list(to_prep.rglob("*MNI*bold.nii.gz")):
-            nii = nb.nifti1.Nifti1Image.load(bold)
-            if not all(np.isclose(nii.header.get_zooms()[:3], self.voxel_size)):
-                logging.info(f"resampling {bold}")
-                resampled: nb.nifti1.Nifti1Image = nb.funcs.concat_images(  # type:ignore
-                    [
-                        processing.resample_to_output(
-                            nii.slicer[:, :, :, vol], voxel_sizes=self.voxel_size
-                        )
-                        for vol in range(nii.shape[-1])
-                    ]
-                )
-            else:
-                logging.info(f"no need for resampling {bold}")
-                resampled = nii
+            logging.info(f"resampling {bold} to template")
+            resampled = image.resample_to_img(
+                bold, self.template, force_resample=True, copy_header=True
+            )
 
             logging.info(f"smoothing and cleaning {bold}")
             image.clean_img(
@@ -116,7 +126,6 @@ class GIFTEntrypoint(tapismpi.TapisMPIEntrypoint):
         # GIFT fails to recognize space-* files as relevant, so need to simplify names
         # loop involves renaming so must generator to list
         for bold in list(to_prep.rglob("*MNI*")):
-            logging.info(f"considering {bold}")
             if "res-" in bold.name:
                 dst = bold.with_name(
                     bold.name.replace(
@@ -134,7 +143,7 @@ class GIFTEntrypoint(tapismpi.TapisMPIEntrypoint):
         # unlinking files after gzip, so convert to list
         # before iterating over
         for nii in list(out_dir.rglob("*nii")):
-            utils.gzip_file(nii, nii.with_suffix(".gz"))
+            utils.gzip_file(nii, nii.with_suffix(".nii.gz"))
             nii.unlink()
 
     async def run_flow(self, in_dir: Path, out_dir: Path) -> None:
