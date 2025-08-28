@@ -117,7 +117,7 @@ class GIFTEntrypoint(tapismpi.TapisMPIEntrypoint):
         # loop involves renaming so must generator to list
         for bold in list(to_prep.rglob("*MNI*")):
             logging.info(f"considering {bold}")
-            if "res" in bold.name:
+            if "res-" in bold.name:
                 dst = bold.with_name(
                     bold.name.replace(
                         "space-MNI152NLin2009cAsym_res-2_desc-preproc_", ""
