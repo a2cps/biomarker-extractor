@@ -87,7 +87,7 @@ class GIFTEntrypoint(tapismpi.TapisMPIEntrypoint):
                     src.rename(dst)
 
     def prep(self, to_prep: Path):
-        for bold in to_prep.rglob("*MNI*bold.nii.gz"):
+        for bold in list(to_prep.rglob("*MNI*bold.nii.gz")):
             nii = nb.nifti1.Nifti1Image.load(bold)
             if not all(np.isclose(nii.header.get_zooms()[:3], self.voxel_size)):
                 logging.info(f"resampling {bold}")
@@ -103,7 +103,7 @@ class GIFTEntrypoint(tapismpi.TapisMPIEntrypoint):
                 logging.info(f"no need for resampling {bold}")
                 resampled = nii
 
-            logging.info(f"smoothing {bold}")
+            logging.info(f"smoothing and cleaning {bold}")
             image.clean_img(
                 imgs=image.smooth_img(resampled, fwhm=self.smooth_fwhm),
                 t_r=utils.get_tr(resampled),
@@ -116,20 +116,19 @@ class GIFTEntrypoint(tapismpi.TapisMPIEntrypoint):
         # GIFT fails to recognize space-* files as relevant, so need to simplify names
         # loop involves renaming so must generator to list
         for bold in list(to_prep.rglob("*MNI*")):
+            logging.info(f"considering {bold}")
             if "res" in bold.name:
-                bold.rename(
-                    bold.with_name(
-                        bold.name.replace(
-                            "space-MNI152NLin2009cAsym_res-2_desc-preproc_", ""
-                        )
+                dst = bold.with_name(
+                    bold.name.replace(
+                        "space-MNI152NLin2009cAsym_res-2_desc-preproc_", ""
                     )
                 )
             else:
-                bold.rename(
-                    bold.with_name(
-                        bold.name.replace("space-MNI152NLin2009cAsym_desc-preproc_", "")
-                    )
+                dst = bold.with_name(
+                    bold.name.replace("space-MNI152NLin2009cAsym_desc-preproc_", "")
                 )
+            logging.info(f"renaming {bold} -> {dst}")
+            bold.rename(dst)
 
     def tidy(self, out_dir: Path) -> None:
         # unlinking files after gzip, so convert to list
