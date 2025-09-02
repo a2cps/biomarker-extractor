@@ -3,6 +3,7 @@ import shutil
 import tempfile
 from pathlib import Path
 
+import nibabel as nb
 from nilearn import image
 
 from biomarkers import utils
@@ -53,6 +54,7 @@ class GIFTEntrypoint(tapismpi.TapisMPIEntrypoint):
     voxel_size: float = 2.0
     low_pass: float = 0.15
     template: Path = Path("/opt/gift/Neuromark_fMRI_2.1_modelorder-multi.nii")
+    n_dummy: int = 15
 
     _ref: Path | None = None
 
@@ -109,18 +111,26 @@ class GIFTEntrypoint(tapismpi.TapisMPIEntrypoint):
     def prep(self, to_prep: Path):
         for bold in list(to_prep.rglob("*MNI*bold.nii.gz")):
             logging.info(f"resampling {bold} to template")
-            resampled = image.resample_to_img(
+            resampled: nb.nifti1.Nifti1Image = image.resample_to_img(
                 bold, self.template, force_resample=True, copy_header=True
             )
 
             logging.info(f"smoothing and cleaning {bold}")
-            image.clean_img(
-                imgs=image.smooth_img(resampled, fwhm=self.smooth_fwhm),
-                t_r=utils.get_tr(resampled),
-                low_pass=self.low_pass,
-                detrend=True,
-                standardize=False,
-                clean__extrapolate=False,
+            # adding 1000 because the detrending and low-pass filter creates negative values
+            # which are interpreted by GIFT as background
+            image.math_img(
+                "img + 1000",
+                copy_header_from="img",
+                img=image.clean_img(
+                    imgs=image.smooth_img(
+                        resampled.slicer[:, :, :, self.n_dummy :], fwhm=self.smooth_fwhm
+                    ),
+                    t_r=utils.get_tr(resampled),
+                    low_pass=self.low_pass,
+                    detrend=True,
+                    standardize=False,
+                    clean__extrapolate=False,
+                ),
             ).to_filename(bold)
 
         # GIFT fails to recognize space-* files as relevant, so need to simplify names
