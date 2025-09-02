@@ -4,7 +4,8 @@ import tempfile
 from pathlib import Path
 
 import nibabel as nb
-from nilearn import image
+import numpy as np
+from nilearn import image, maskers, masking
 
 from biomarkers import utils
 from biomarkers.entrypoints import tapismpi
@@ -114,24 +115,40 @@ class GIFTEntrypoint(tapismpi.TapisMPIEntrypoint):
             resampled: nb.nifti1.Nifti1Image = image.resample_to_img(
                 bold, self.template, force_resample=True, copy_header=True
             )
+            mask: nb.nifti1.Nifti1Image = image.resample_to_img(
+                bold.with_name(
+                    bold.name.replace("desc-preproc_bold", "desc-brain_mask")
+                ),
+                self.template,
+                force_resample=True,
+                copy_header=True,
+            )
 
             logging.info(f"smoothing and cleaning {bold}")
             # adding 1000 because the detrending and low-pass filter creates negative values
             # which are interpreted by GIFT as background
-            image.math_img(
-                "img + 1000",
-                copy_header_from="img",
-                img=image.clean_img(
-                    imgs=image.smooth_img(
-                        resampled.slicer[:, :, :, self.n_dummy :], fwhm=self.smooth_fwhm
+            masker = maskers.NiftiMasker(
+                mask,
+                smoothing_fwhm=self.smooth_fwhm,
+                standardize=False,
+                detrend=True,
+                low_pass=self.low_pass,
+                t_r=utils.get_tr(resampled),
+                clean__extrapolate=False,
+            )
+
+            fitted = (
+                masker.fit_transform(
+                    resampled,
+                    sample_mask=np.array(
+                        [False] * self.n_dummy
+                        + [True] * (resampled.shape[-1] - self.n_dummy)
                     ),
-                    t_r=utils.get_tr(resampled),
-                    low_pass=self.low_pass,
-                    detrend=True,
-                    standardize=False,
-                    clean__extrapolate=False,
-                ),
-            ).to_filename(bold)
+                )
+                + 1000
+            )
+
+            masking.unmask(fitted, mask).to_filename(bold)
 
         # GIFT fails to recognize space-* files as relevant, so need to simplify names
         # loop involves renaming so must generator to list
