@@ -122,6 +122,7 @@ class GIFTEntrypoint(tapismpi.TapisMPIEntrypoint):
                 self.template,
                 force_resample=True,
                 copy_header=True,
+                interpolation="nearest",
             )
 
             logging.info(f"smoothing and cleaning {bold}")
