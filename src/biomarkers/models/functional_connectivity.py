@@ -271,11 +271,7 @@ def get_maps_timeseries(
 
     return unpivot_timeseries_to_df(
         time_series,
-        maps.labels.select("region")
-        .with_columns(region=pl.col("region").cast(pl.Utf8()))
-        .to_series()
-        .sort()
-        .to_list(),
+        maps.labels.select("region").to_series().sort().cast(pl.Utf8()).to_list(),
     )
 
 
@@ -309,11 +305,7 @@ def get_labels_timeseries(
 
     return unpivot_timeseries_to_df(
         time_series,
-        labels_lookup.select("region")
-        .with_columns(region=pl.col("region").cast(pl.Utf8()))
-        .to_series()
-        .sort()
-        .to_list(),
+        labels_lookup.select("region").to_series().sort().cast(pl.Utf8()).to_list(),
     )
 
 
