@@ -7,7 +7,8 @@ import polars as pl
 import pydantic
 from ancpbids import pybids_compat
 from nibabel import processing
-from nilearn import _utils, masking
+from nilearn import masking
+from nilearn._utils import niimg_conversions
 
 PROBSEG_LABEL: typing.TypeAlias = typing.Literal["WM", "CSF", "GM"]
 
@@ -117,7 +118,7 @@ class Func3d(pydantic.BaseModel):
     dtype: str = "f8"
 
     def to_polars(self, target: nb.nifti1.Nifti1Image | None = None) -> pl.DataFrame:
-        i: nb.nifti1.Nifti1Image = _utils.check_niimg_3d(self.path)  # type: ignore
+        i: nb.nifti1.Nifti1Image = niimg_conversions.check_niimg_3d(self.path)  # type: ignore
 
         if target:
             img = processing.resample_from_to(i, target, order=1)
@@ -142,7 +143,9 @@ class Func4d(pydantic.BaseModel):
             pl.DataFrame: data from input img
         """
 
-        i: nb.nifti1.Nifti1Image = _utils.check_niimg(self.path, ensure_ndim=4)  # type: ignore
+        i: nb.nifti1.Nifti1Image = niimg_conversions.check_niimg(
+            self.path, ensure_ndim=4
+        )  # type: ignore
         return from_4d_to_polars(img=i, value_name=self.label, dtype=self.dtype)
 
 
