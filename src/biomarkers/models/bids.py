@@ -21,8 +21,8 @@ class Layout(pydantic.BaseModel):
     def subjects(self) -> list[str]:
         return [str(sub) for sub in self.layout.get_subjects()]
 
-    def get(self, filters: dict[str, str]) -> Path:
-        file = self.layout.get(return_type="filename", **filters)
+    def get(self, filters: dict[str, str | None]) -> Path:
+        file = self.layout.get(return_type="filename", **filters)  # type:ignore
         if not len(file) == 1:
             msg = f"Expected that only 1 file would be retreived but saw {file=}; {filters=}"
             raise ValueError(msg)
@@ -34,6 +34,9 @@ class Layout(pydantic.BaseModel):
     def get_probseg(self, filters: dict[str, str], label: PROBSEG_LABEL) -> Path:
         return self.get(filters={"label": label, **filters})
 
+    def get_dseg(self, filters: dict[str, str | None]) -> Path:
+        return self.get(filters={**filters, "suffix": "dseg", "extension": ".nii.gz"})
+
     def get_wm(self, filters: dict[str, str]) -> Path:
         return self.get_probseg(filters=filters, label="WM")
 
@@ -43,9 +46,14 @@ class Layout(pydantic.BaseModel):
     def get_csf(self, filters: dict[str, str]) -> Path:
         return self.get_probseg(filters=filters, label="CSF")
 
-    def get_boldref(self, filters: dict[str, str]) -> Path:
+    def get_boldref(self, filters: dict[str, str | None]) -> Path:
         return self.get(
-            filters={**filters, "suffix": "boldref", "extension": ".nii.gz"}
+            filters={
+                **filters,
+                "suffix": "boldref",
+                "extension": ".nii.gz",
+                "desc": "coreg",
+            }
         )
 
     def get_brain(self, filters: dict[str, str]) -> Path:
@@ -58,7 +66,7 @@ class Layout(pydantic.BaseModel):
             }
         )
 
-    def get_preproc(self, filters: dict[str, str]) -> Path:
+    def get_preproc(self, filters: dict[str, str | None]) -> Path:
         return self.get(
             filters={
                 **filters,

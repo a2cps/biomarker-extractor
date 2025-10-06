@@ -85,7 +85,9 @@ def exclude_to_index(
     )
 
 
-def get_tr(nii: nb.nifti1.Nifti1Image) -> float:
+def get_tr(nii: nb.nifti1.Nifti1Image | os.PathLike) -> float:
+    if isinstance(nii, os.PathLike):
+        nii = nb.nifti1.Nifti1Image.load(nii)
     return nii.header.get("pixdim")[4]  # type: ignore
 
 
@@ -298,4 +300,36 @@ def mat_to_df(cormat: np.ndarray, labels: typing.Sequence[int]) -> pl.DataFrame:
 
     return pl.DataFrame(
         {"source": source, "target": target, "connectivity": connectivity}
+    )
+
+
+def get_sampling_mat(i: nb.nifti1.Nifti1Image) -> np.ndarray:
+    a = np.eye(4)
+    for d in range(3):
+        a[d, d] = i.header.get_zooms()[d]
+
+    return a
+
+
+def get_affine(img: nb.nifti1.Nifti1Image) -> np.ndarray:
+    affine = img.affine
+    if affine is None:
+        msg = f"Unable to get affine from {img.get_filename()}"
+        raise AssertionError(msg)
+    return affine
+
+
+def get_flirt_mat(moving: os.PathLike, reference: os.PathLike, dst: os.PathLike):
+    moving_img = nb.nifti1.Nifti1Image.load(moving)
+    reference_img = nb.nifti1.Nifti1Image.load(reference)
+
+    np.savetxt(
+        dst,
+        np.linalg.inv(
+            get_sampling_mat(moving_img)
+            @ np.linalg.inv(get_affine(moving_img))
+            @ get_affine(reference_img)
+            @ np.linalg.inv(get_sampling_mat(reference_img))
+        ),
+        fmt="%.7f",
     )

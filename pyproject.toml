@@ -9,6 +9,8 @@ dependencies = [
     "networkx>=3.4.2",
     "nibabel>=5.3.2",
     "nilearn>=0.10.4",
+    "nitransforms>=25.1.0",
+    "niwrap>=0.6.3",
     "numpy>=2.1.2",
     "polars>=1.17.0",
     "pyarrow>=18.0.0",
@@ -28,12 +30,14 @@ markers = ["mpi: tests that require mpirun"]
 asyncio_default_fixture_loop_scope = "function"
 filterwarnings = ["ignore:Development of the BIDSLayout:UserWarning"]
 
-[tool.uv]
-dev-dependencies = [
+[dependency-groups]
+dev = [
+    "jupyter>=1.1.1",
     "pre-commit>=4.0.1",
     "pytest-asyncio>=0.24.0",
     "pytest>=8.3.3",
 ]
+
 
 [tool.ruff]
 exclude = ["tools"]
@@ -43,3 +47,22 @@ installer = "uv"
 
 [[tool.hatch.envs.test.matrix]]
 python = ["3.12", "3.11"]
+
+[tool.pixi.workspace]
+channels = [
+    "conda-forge",
+    "https://fsl.fmrib.ox.ac.uk/fsldownloads/fslconda/public",
+]
+platforms = ["osx-arm64"]
+
+[tool.pixi.pypi-dependencies]
+biomarkers = { path = ".", editable = true }
+
+[tool.pixi.environments]
+default = { solve-group = "default" }
+dev = { features = ["dev"], solve-group = "default" }
+
+[tool.pixi.tasks]
+
+[tool.pixi.dependencies]
+fsl-pyfix = ">=0.10.0,<0.11"

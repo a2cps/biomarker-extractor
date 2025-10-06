@@ -295,3 +295,13 @@ def get_jhu_atlas() -> Labels:
     atlas = get_jhu_dti()
     labels = get_jhu_lut()
     return Labels(labels_img=atlas, labels=labels)
+
+
+def get_standard_file() -> Path:
+    with resources.as_file(
+        resources.files("biomarkers.data").joinpath(
+            "tpl-MNI152NLin6Asym_res-01_desc-brain_T1w.nii.gz"
+        )
+    ) as f:
+        design = f
+    return design

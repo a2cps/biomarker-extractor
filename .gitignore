@@ -160,4 +160,6 @@ src/biomarkers/data/MNI152_T1_6mm_gray.nii.gz
 tests/data
 .devcontainer
 .conda
-.ruff_cache
+.ruff_cache# pixi environments
+.pixi/*
+!.pixi/config.toml
