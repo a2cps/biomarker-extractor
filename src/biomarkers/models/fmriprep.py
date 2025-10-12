@@ -3,9 +3,12 @@ import typing
 CIFTI_OUTPUT: typing.TypeAlias = typing.Literal["91k", "170k"]
 OUTPUT_SPACE: typing.TypeAlias = typing.Literal[
     "MNI152NLin2009cAsym:res-native:res-2",
+    "MNI152NLin2009cAsym:res-3",
     "MNI152NLin6Asym:res-native:res-2",
     "MNI152NLin2009cAsym",
     "MNI152NLin6Asym",
+    "MNI152NLin6Asym:res-2",
+    "MNI152NLin2009cAsym:res-2",
     "sbref",
     "anat",
 ]

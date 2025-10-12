@@ -66,3 +66,4 @@ dev = { features = ["dev"], solve-group = "default" }
 
 [tool.pixi.dependencies]
 fsl-pyfix = ">=0.10.0,<0.11"
+scikit-learn = ">=1.7.2,<2"
