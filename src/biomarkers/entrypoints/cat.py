@@ -9,7 +9,7 @@ from biomarkers.models import cat
 
 class CATEntrypoint(tapismpi.TapisMPIEntrypoint):
     def get_args(self, batchfile: Path) -> list[str]:
-        return ["/opt/spm/spm12", "batch", str(batchfile)]
+        return ["/usr/bin/mlrtapp/spm12", "batch", str(batchfile)]
 
     def check_outputs(self, output_dir_to_check: Path) -> bool:
         out = True
