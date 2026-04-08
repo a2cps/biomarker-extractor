@@ -9,29 +9,6 @@ from biomarkers.entrypoints import tapismpi
 from biomarkers.models import fmriprep as fmriprep_models
 
 
-def get_synthstrip_args(
-    src: Path,
-    model: Path,
-    mask: Path,
-    n_workers: int | None = None,
-    no_csf: bool = False,
-) -> list[str]:
-    args = [
-        "synthstrip",
-        "-i",
-        str(src),
-        "-m",
-        str(mask),
-        "-n",
-        str(n_workers if n_workers else 1),
-        "--model",
-        str(model),
-    ]
-    if no_csf:
-        args.append("--no-csf")
-    return args
-
-
 def extend_arg(
     args: list[str],
     name: str,
@@ -110,35 +87,18 @@ class FMRIPRepEntrypoint(tapismpi.TapisMPIEntrypoint):
         )
         mask.parent.mkdir(parents=True)
 
-        async with utils.subprocess_manager(
-            log=tmpd_out / f"synthstrip_rank-{self.RANK}.log",
-            args=get_synthstrip_args(
-                nii,
-                model=self.synthstrip_model,
-                mask=mask,
-                n_workers=self.n_workers,
-                no_csf=self.no_csf,
-            ),
-        ) as proc:
-            await proc.wait()
-            if proc.returncode and proc.returncode > 0:
-                msg = f"synthstrip failed with {proc.returncode=}"
-                raise RuntimeError(msg)
-
-    async def run_flow(self, tmpd_in: Path, tmpd_out: Path) -> None:
-        await self.prep(tmpd_in, tmpd_out)
+    async def run_flow(self, in_dir: Path, out_dir: Path) -> None:
+        await self.prep(in_dir, out_dir)
         with tempfile.TemporaryDirectory() as tmpd:
             async with utils.subprocess_manager(
-                log=tmpd_out / f"fmriprep_rank-{self.RANK}.log",
-                args=self.get_args(
-                    bidsdir=tmpd_in, outdir=tmpd_out, work_dir=Path(tmpd)
-                ),
+                log=out_dir / f"fmriprep_rank-{self.RANK}.log",
+                args=self.get_args(bidsdir=in_dir, outdir=out_dir, work_dir=Path(tmpd)),
             ) as proc:
                 await proc.wait()
                 if proc.returncode and proc.returncode > 0:
                     # remove folder so that archiving detects that there was a failure
                     # and sends logs to failure_dst_dir
-                    if (outdir_fmriprep := tmpd_out / "fmriprep").exists():
+                    if (outdir_fmriprep := out_dir / "fmriprep").exists():
                         shutil.rmtree(outdir_fmriprep)
                     msg = f"fmriprep failed with {proc.returncode=}"
                     raise RuntimeError(msg)

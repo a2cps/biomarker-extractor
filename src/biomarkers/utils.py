@@ -204,7 +204,7 @@ def compare_arg_lengths(
 
 @contextlib.asynccontextmanager
 async def subprocess_manager(
-    log: Path, args: list[str]
+    log: Path | int, args: list[str]
 ) -> typing.AsyncIterator[asyncio.subprocess.Process]:
     logging.info(f"{args=}")
 
