@@ -21,7 +21,16 @@ def get_args(src: Path, dst: Path, csf: bool = True) -> list[str]:
         / src.name.replace("T1w.nii.gz", f"desc-{desc}_mask.nii.gz")
     )
     mask.parent.mkdir(parents=True, exist_ok=True)
-    args = ["mri_synthstrip", "-i", str(src), "-m", str(mask), "-t", "1"]
+    args = [
+        "python",
+        "/opt/synthstrip/mri_synthstrip.py",
+        "-i",
+        str(src),
+        "-m",
+        str(mask),
+        "-t",
+        "1",
+    ]
     if not csf:
         args.append("--no-csf")
     return args
