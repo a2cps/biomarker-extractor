@@ -1,5 +1,4 @@
 import shutil
-import subprocess
 from pathlib import Path
 
 from biomarkers import utils
@@ -39,7 +38,7 @@ def get_args(src: Path, dst: Path, csf: bool = True) -> list[str]:
 async def synthstrip_flow(nii: Path, out_dir: Path) -> None:
     for csf in [True, False]:
         async with utils.subprocess_manager(
-            log=subprocess.DEVNULL, args=get_args(src=nii, dst=out_dir, csf=csf)
+            log=Path("/dev/null"), args=get_args(src=nii, dst=out_dir, csf=csf)
         ) as proc:
             await proc.wait()
             if proc.returncode and proc.returncode > 0:
