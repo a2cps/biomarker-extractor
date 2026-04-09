@@ -6,9 +6,6 @@ from biomarkers.flows import synthstrip
 
 
 class SynthStripEntrypoint(tapismpi.TapisMPIEntrypoint):
-    synthstrip_model: Path
-    no_csf: bool = False
-
     def check_outputs(self, output_dir_to_check: Path) -> bool:
         return output_dir_to_check.exists()
 
