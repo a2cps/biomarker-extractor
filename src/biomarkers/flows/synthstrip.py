@@ -56,8 +56,12 @@ async def synthstrip_flow(nii: Path, out_dir: Path) -> None:
 
     volumes = {}
     for f in out_dir.rglob("*nii.gz"):
-        volumes[f.stem] = nb.nifti1.Nifti1Image.load(f).get_fdata().sum()
+        volumes[f.stem] = nb.nifti1.Nifti1Image.load(f).get_fdata().sum().astype(int)
 
-    pl.DataFrame(volumes).write_csv(
-        out_dir / "synthstrip" / "volumes.tsv", separator="\t"
-    )
+    pl.DataFrame(volumes).unpivot(
+        variable_name="src", value_name="n_voxels"
+    ).with_columns(
+        sub=pl.col("src").str.extract(r"sub-(\w+)_"),
+        ses=pl.col("src").str.extract(r"ses-(\w+)_"),
+        csf=pl.col("src").str.contains("csf"),
+    ).drop("src").write_csv(out_dir / "synthstrip" / "volumes.tsv", separator="\t")

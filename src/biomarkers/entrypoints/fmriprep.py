@@ -1,4 +1,3 @@
-import logging
 import shutil
 import tempfile
 import typing
@@ -25,7 +24,6 @@ def extend_arg(
 
 class FMRIPRepEntrypoint(tapismpi.TapisMPIEntrypoint):
     fs_license_file: Path
-    synthstrip_model: Path
     n_workers: int | None = None
     mem_mb: int | None = None
     cifti_output: fmriprep_models.CIFTI_OUTPUT = "91k"
@@ -35,7 +33,7 @@ class FMRIPRepEntrypoint(tapismpi.TapisMPIEntrypoint):
         fmriprep_models.OUTPUT_SPACE
     )
     anat_only: typing.Sequence[bool] | None = None
-    no_csf: bool = False
+    derivatives: typing.Sequence[Path] | None = None
 
     def check_outputs(self, output_dir_to_check: Path) -> bool:
         return output_dir_to_check.exists() and (
@@ -46,6 +44,9 @@ class FMRIPRepEntrypoint(tapismpi.TapisMPIEntrypoint):
         args = ["fmriprep", "--notrack", "--return-all-components"]
         if self.anat_only and self.anat_only[self.RANK]:
             args.append("--anat-only")
+        if self.derivatives:
+            extend_arg(args, "--derivatives", str(self.derivatives[self.RANK]))
+
         to_extend = {
             "--fs-license-file": self.fs_license_file,
             "--n-cpus": self.n_workers,
@@ -53,7 +54,6 @@ class FMRIPRepEntrypoint(tapismpi.TapisMPIEntrypoint):
             "--bold2anat-dof": self.bold2anat_dof,
             "--cifti-output": self.cifti_output,
             "--output-spaces": " ".join(self.output_spaces),
-            "--derivatives": f"synthstrip={outdir}/synthstrip",
             "--dummy-scans": self.dummy_scans,
             "--work-dir": work_dir,
         }
@@ -64,31 +64,7 @@ class FMRIPRepEntrypoint(tapismpi.TapisMPIEntrypoint):
 
         return args
 
-    async def prep(self, tmpd_in: Path, tmpd_out: Path) -> Path | None:
-        logging.info("Generating brainmask with synthstrip")
-        maybe_nii = list(d for d in tmpd_in.rglob("*T1w.nii.gz"))
-        if len(maybe_nii) == 0:
-            msg = f"Did not find any *T1w.nii.gz in {tmpd_in}"
-            raise AssertionError(msg)
-        elif len(maybe_nii) > 1:
-            logging.warning(
-                f"Unexpected number of  *T1w.nii.gz found in {tmpd_in}: {maybe_nii}. Taking first."
-            )
-        nii = maybe_nii[0]
-        sub = utils.get_sub(nii)
-        ses = utils.get_ses(nii)
-        mask = (
-            tmpd_out
-            / "synthstrip"
-            / f"sub-{sub}"
-            / f"ses-{ses}"
-            / "anat"
-            / nii.name.replace("T1w.nii.gz", "desc-brain_mask.nii.gz")
-        )
-        mask.parent.mkdir(parents=True)
-
     async def run_flow(self, in_dir: Path, out_dir: Path) -> None:
-        await self.prep(in_dir, out_dir)
         with tempfile.TemporaryDirectory() as tmpd:
             async with utils.subprocess_manager(
                 log=out_dir / f"fmriprep_rank-{self.RANK}.log",
