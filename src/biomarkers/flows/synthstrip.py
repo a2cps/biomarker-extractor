@@ -31,7 +31,9 @@ def get_args(src: Path, dst: Path, csf: bool = True) -> list[str]:
         "1",
     ]
     if not csf:
-        args.append("--no-csf")
+        args.extend(["--model", "/opt/synthstrip/synthstrip.nocsf.1.pt"])
+    else:
+        args.extend(["--model", "/opt/synthstrip/synthstrip.1.pt"])
     return args
 
 
