@@ -1,6 +1,9 @@
 import shutil
 from pathlib import Path
 
+import nibabel as nb
+import polars as pl
+
 from biomarkers import utils
 
 
@@ -50,3 +53,11 @@ async def synthstrip_flow(nii: Path, out_dir: Path) -> None:
                     shutil.rmtree(outdir)
                 msg = f"synthstrip failed with {proc.returncode=}"
                 raise RuntimeError(msg)
+
+    volumes = {}
+    for f in out_dir.rglob("*nii.gz"):
+        volumes[f.stem] = nb.nifti1.Nifti1Image.load(f).get_fdata().sum()
+
+    pl.DataFrame(volumes).write_csv(
+        out_dir / "synthstrip" / "volumes.tsv", separator="\t"
+    )
