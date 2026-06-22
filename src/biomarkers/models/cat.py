@@ -72,9 +72,8 @@ class CATReport:
     catlog: pydantic.FilePath
     cat_mat: pydantic.FilePath
     cat_xml: pydantic.FilePath
-    # some versions of cat12 have issues generating these
-    catreportj: Path | None = None
-    catreport: Path | None = None
+    catreportj: pydantic.FilePath
+    catreport: pydantic.FilePath
 
     @classmethod
     def from_root(cls, root: Path, src: str) -> typing.Self:
