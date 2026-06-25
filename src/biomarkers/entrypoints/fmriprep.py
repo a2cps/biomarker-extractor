@@ -41,7 +41,13 @@ class FMRIPRepEntrypoint(tapismpi.TapisMPIEntrypoint):
         )
 
     def get_args(self, bidsdir: Path, outdir: Path, work_dir: Path) -> list[str]:
-        args = ["fmriprep", "--notrack", "--return-all-components"]
+        args = [
+            "/bin/bash",
+            "/shell-hook.sh",
+            "fmriprep",
+            "--notrack",
+            "--return-all-components",
+        ]
         if self.anat_only and self.anat_only[self.RANK]:
             args.append("--anat-only")
         if self.derivatives:
