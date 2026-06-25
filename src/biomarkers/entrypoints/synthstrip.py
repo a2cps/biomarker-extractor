@@ -26,4 +26,6 @@ class SynthStripEntrypoint(tapismpi.TapisMPIEntrypoint):
 
     async def run_flow(self, in_dir: Path, out_dir: Path) -> None:
         nii = await self.prep(in_dir)
-        await synthstrip.synthstrip_flow(nii, out_dir=out_dir)
+        await synthstrip.synthstrip_flow(
+            nii, out_dir=out_dir, log=out_dir / f"synthstrip_rank-{self.RANK}.log"
+        )

@@ -40,10 +40,12 @@ def get_args(src: Path, dst: Path, csf: bool = True) -> list[str]:
     return args
 
 
-async def synthstrip_flow(nii: Path, out_dir: Path) -> None:
+async def synthstrip_flow(
+    nii: Path, out_dir: Path, log: Path = Path("/dev/null")
+) -> None:
     for csf in [True, False]:
         async with utils.subprocess_manager(
-            log=Path("/dev/null"), args=get_args(src=nii, dst=out_dir, csf=csf)
+            log=log, args=get_args(src=nii, dst=out_dir, csf=csf)
         ) as proc:
             await proc.wait()
             if proc.returncode and proc.returncode > 0:
