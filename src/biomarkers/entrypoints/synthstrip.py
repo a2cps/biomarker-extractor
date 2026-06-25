@@ -7,7 +7,9 @@ from biomarkers.flows import synthstrip
 
 class SynthStripEntrypoint(tapismpi.TapisMPIEntrypoint):
     def check_outputs(self, output_dir_to_check: Path) -> bool:
-        return output_dir_to_check.exists()
+        return output_dir_to_check.exists() and (
+            len(list(output_dir_to_check.rglob("**nii.gz"))) == 2
+        )
 
     async def prep(self, tmpd_in: Path) -> Path:
         maybe_nii = list(d for d in tmpd_in.rglob("*T1w.nii.gz"))
