@@ -44,7 +44,7 @@ class FMRIPRepEntrypoint(tapismpi.TapisMPIEntrypoint):
         args = [
             "/bin/bash",
             "/shell-hook.sh",
-            "fmriprep",
+            "/app/.pixi/envs/fmriprep/bin/fmriprep",
             "--notrack",
             "--return-all-components",
         ]
