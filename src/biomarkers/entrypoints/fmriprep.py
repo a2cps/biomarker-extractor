@@ -1,11 +1,17 @@
+import json
+import logging
 import shutil
 import tempfile
 import typing
 from pathlib import Path
 
+import nibabel as nb
+
 from biomarkers import utils
 from biomarkers.entrypoints import tapismpi
 from biomarkers.models import fmriprep as fmriprep_models
+
+MIN_FMRI_FRAMES = 200
 
 
 def extend_arg(
@@ -32,7 +38,7 @@ class FMRIPRepEntrypoint(tapismpi.TapisMPIEntrypoint):
     output_spaces: typing.Sequence[fmriprep_models.OUTPUT_SPACE] = typing.get_args(
         fmriprep_models.OUTPUT_SPACE
     )
-    anat_only: typing.Sequence[bool] | None = None
+    anat_only: typing.MutableSequence[bool] | None = None
     derivatives: typing.Sequence[Path] | None = None
 
     def check_outputs(self, output_dir_to_check: Path) -> bool:
@@ -70,7 +76,55 @@ class FMRIPRepEntrypoint(tapismpi.TapisMPIEntrypoint):
 
         return args
 
+    def prep(self, in_dir: Path) -> None:
+
+        if self.anat_only and self.anat_only[self.RANK]:
+            return
+
+        logging.info("Looking for short scans")
+        to_delete = []
+        for f in in_dir.rglob("*bold.nii.gz"):
+            nii = nb.nifti1.Nifti1Image.load(f)
+            if nii.shape[-1] < MIN_FMRI_FRAMES:
+                to_delete.append(f)
+                to_delete.append(Path(str(f).replace("nii.gz", "json")))
+                if (
+                    events_tsv := Path(str(f).replace("bold.nii.gz", "events.tsv"))
+                ).exists():
+                    to_delete.append(events_tsv)
+
+        for f in to_delete:
+            logging.info(f"removing {f}")
+            f.unlink()
+            # also need to remove references to this file in fieldmap metadata
+            if (fmaps := f.parent.parent / "fmap").exists():
+                sesdir = fmaps.parent
+                subdir = sesdir.parent
+                for fmap in fmaps.glob("*fmrib0*.json"):
+                    metadata = json.loads(fmap.read_text())
+                    if "IntendedFor" in metadata:
+                        intended_for = [
+                            str(i)
+                            for i in metadata.get("IntendedFor")
+                            if i != str(f.relative_to(subdir))
+                        ]
+                        metadata["IntendedFor"] = intended_for
+                    fmap.write_text(json.dumps(metadata))
+
+            # assuming that there is no *scans.tsv file which could also refer to these files
+
+        # if there were bold files but now there aren't, delete the func folder and
+        # convert this to an anat-only run
+        if len(to_delete) and not len(list(in_dir.rglob("*bold.nii.gz"))):
+            to_delete[0].parent.rmdir()
+
+            if self.anat_only:
+                self.anat_only[self.RANK] = True
+
     async def run_flow(self, in_dir: Path, out_dir: Path) -> None:
+
+        self.prep(in_dir)
+
         with tempfile.TemporaryDirectory() as tmpd:
             async with utils.subprocess_manager(
                 log=out_dir / f"fmriprep_rank-{self.RANK}.log",
