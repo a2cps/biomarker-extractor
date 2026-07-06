@@ -106,7 +106,7 @@ class FMRIPRepEntrypoint(tapismpi.TapisMPIEntrypoint):
                         intended_for = [
                             str(i)
                             for i in metadata.get("IntendedFor")
-                            if i is not str(f.relative_to(subdir))
+                            if i != str(f.relative_to(subdir))
                         ]
                         metadata["IntendedFor"] = intended_for
                     fmap.write_text(json.dumps(metadata))
