@@ -57,8 +57,6 @@ class FMRIPRepEntrypoint(tapismpi.TapisMPIEntrypoint):
             "fmap-jacobian",
             "--ignore",
             "slicetiming",
-            "--level",
-            "resampling",
         ]
         if self.anat_only and self.anat_only[self.RANK]:
             args.append("--anat-only")
