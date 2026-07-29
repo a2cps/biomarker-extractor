@@ -53,8 +53,6 @@ class FMRIPRepEntrypoint(tapismpi.TapisMPIEntrypoint):
             "/app/.pixi/envs/fmriprep/bin/fmriprep",
             "--notrack",
             "--return-all-components",
-            "--ignore",
-            "fmap-jacobian",
         ]
         if self.anat_only and self.anat_only[self.RANK]:
             args.append("--anat-only")
