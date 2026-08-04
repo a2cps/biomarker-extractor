@@ -40,6 +40,7 @@ class FMRIPRepEntrypoint(tapismpi.TapisMPIEntrypoint):
     )
     anat_only: typing.MutableSequence[bool] | None = None
     derivatives: typing.Sequence[Path] | None = None
+    ignore: typing.Sequence[fmriprep_models.IGNORABLE] | None = None
 
     def check_outputs(self, output_dir_to_check: Path) -> bool:
         return output_dir_to_check.exists() and (
@@ -58,6 +59,9 @@ class FMRIPRepEntrypoint(tapismpi.TapisMPIEntrypoint):
             args.append("--anat-only")
         if self.derivatives:
             extend_arg(args, "--derivatives", str(self.derivatives[self.RANK]))
+        if self.ignore:
+            for i in self.ignore:
+                extend_arg(args, "--ignore", i)
 
         to_extend = {
             "--fs-license-file": self.fs_license_file,

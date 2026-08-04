@@ -8,3 +8,5 @@ OUTPUT_SPACE: typing.TypeAlias = typing.Literal[
 ]
 BOLD2ANAT_DOF = typing.Literal[6, 9, 12]
 SPACE: typing.TypeAlias = typing.Literal["MNI152NLin2009cAsym", "MNI152NLin6Asym"]
+
+IGNORABLE = typing.Literal["fmap-jacobian", "slicetiming"]
