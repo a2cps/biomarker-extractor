@@ -1,15 +1,22 @@
 import shutil
 import tempfile
+import typing
 from pathlib import Path
 
 from biomarkers import utils
 from biomarkers.entrypoints import tapismpi
+from biomarkers.models import qsiprep as qsiprep_models
+
+# qsiprep's container image installs qsiprep (and eddy_quad) into a pixi env.
+# the env's bin is on PATH via ENV, so no shell-hook is needed (and running
+# `bash /shell-hook.sh <cmd>` would not exec <cmd>)
+QSIPREP_BIN = Path("/app/.pixi/envs/qsiprep/bin")
 
 
 def get_eddy_args(bidsdir: Path, workdir: Path, outdir: Path) -> list[str]:
-    qsiprep_wf = workdir / "qsiprep_wf"
     dwi_preproc_ses = None
-    for d in qsiprep_wf.glob("single_subject_*_wf/dwi_preproc_ses_*_wf"):
+    # e.g., qsiprep_26_1_wf/sub_01_ses_V1_wf/dwi_preproc_ses_V1_wf
+    for d in workdir.glob("qsiprep_*_wf/sub_*_wf/dwi_preproc_*_wf"):
         dwi_preproc_ses = d
         break
     if dwi_preproc_ses is None:
@@ -34,7 +41,7 @@ def get_eddy_args(bidsdir: Path, workdir: Path, outdir: Path) -> list[str]:
     )
     fieldmap = hmc_sdc_wf / "topup" / "fieldmap_HZ.nii.gz"
     args = [
-        "eddy_quad",
+        QSIPREP_BIN / "eddy_quad",
         basename,
         "-v",
         "-idx",
@@ -68,14 +75,14 @@ def extend_arg(
 
 
 class QSIPRepEntrypoint(tapismpi.TapisMPIEntrypoint):
-    fs_license_file: Path
     eddy_params: Path
     n_workers: int | None = None
     mem_mb: int | None = None
     output_resolution: float = 1.7
-    hmc_model: str = "eddy"
+    hmc_method: str = "eddy"
     unringing_method: str = "mrdegibbs"
     denoise_method: str = "patch2self"
+    force: typing.Sequence[qsiprep_models.FORCEABLE] | None = ("no-csf-synthstrip",)
 
     def check_outputs(self, output_dir_to_check: Path) -> bool:
         return output_dir_to_check.exists() and (
@@ -83,24 +90,33 @@ class QSIPRepEntrypoint(tapismpi.TapisMPIEntrypoint):
         )
 
     def get_args(self, bidsdir: Path, outdir: Path, work_dir: Path) -> list[str]:
-        args = ["qsiprep", "--notrack", "--skip-bids-validation"]
+        # positionals go first, because options like --force take nargs="+"
+        # and would otherwise consume them
+        # qsiprep writes directly into the output dir, so give it a subfolder
+        args = [
+            str(QSIPREP_BIN / "qsiprep"),
+            str(bidsdir),
+            str(outdir / "qsiprep"),
+            "participant",
+            "--notrack",
+            "--skip-bids-validation",
+        ]
+        if self.force:
+            for f in self.force:
+                extend_arg(args, "--force", f)
 
         to_extend = {
             "--output-resolution": self.output_resolution,
-            "--fs-license-file": self.fs_license_file,
-            "--hmc_model": self.hmc_model,
+            "--hmc-method": self.hmc_method,
             "--unringing-method": self.unringing_method,
             "--denoise-method": self.denoise_method,
             "--nthreads": self.n_workers,
-            "--mem_mb": self.mem_mb,
+            "--mem-mb": self.mem_mb,
             "--eddy-config": self.eddy_params,
             "--work-dir": work_dir,
         }
         for key, value in to_extend.items():
             extend_arg(args, key, value)
-
-        # qsiprep always stores outputs in subfolder of outdir called "qsiprep"
-        args.extend([str(bidsdir), str(outdir), "participant"])
 
         return args
 

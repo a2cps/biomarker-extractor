@@ -54,12 +54,12 @@ async def postdtifit_flow(
         transform=qsiprep
         / f"sub-{sub}"
         / "anat"
-        / f"sub-{sub}_from-MNI152NLin2009cAsym_to-T1w_mode-image_xfm.h5",
+        / f"sub-{sub}_from-MNI152NLin2009cAsym_to-ACPC_mode-image_xfm.h5",
         reference=qsiprep
         / f"sub-{sub}"
         / f"ses-{ses}"
         / "dwi"
-        / f"sub-{sub}_ses-{ses}_space-T1w_dwiref.nii.gz",
+        / f"sub-{sub}_ses-{ses}_space-ACPC_desc-preproc_dwiref.nii.gz",
         dst=outdir
         / "dtifit_regional"
         / f"sub-{sub}"
